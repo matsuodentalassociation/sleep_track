@@ -6,14 +6,18 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>音声・体動 ZIP出力テスト v03</title>
+<meta name="sleep-app-version" content="04">
+<meta name="sleep-update-schema" content="4">
+<title>音声・体動 ZIP出力テスト v04</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:#f3f5f8;color:#182231;font-family:system-ui,sans-serif}main{max-width:720px;margin:auto;padding:20px 16px}h1{font-size:23px}h2{font-size:18px}.card{background:white;border:1px solid #dde3eb;border-radius:14px;padding:18px;margin:16px 0}.row{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}button,a.save{border:0;border-radius:9px;padding:12px 15px;background:#235bce;color:white;font-size:15px;cursor:pointer;text-decoration:none;display:inline-block}button:disabled{opacity:.45;cursor:default}#stop{background:#b83444}.small{font-size:13px;color:#526071;line-height:1.7;overflow-wrap:anywhere}.meter{height:16px;background:#e8edf5;border-radius:8px;overflow:hidden}#level{height:100%;width:0;background:#329767}label{display:block;margin:12px 0 6px}input[type=text]{width:100%;padding:10px;border:1px solid #c9d1dc;border-radius:7px}input[type=range]{width:100%}canvas{display:block;width:100%;height:100px;background:#f7f9fc;border-radius:8px}audio{width:100%;margin:10px 0}.clip{border-top:1px solid #dde3eb;padding:14px 0}#error{color:#a52a36;white-space:pre-wrap}.save{margin-right:8px}summary{cursor:pointer;font-weight:bold}#status{font-weight:bold}
+*{box-sizing:border-box}body{margin:0;background:#f3f5f8;color:#182231;font-family:system-ui,sans-serif}main{max-width:720px;margin:auto;padding:20px 16px}h1{font-size:23px}h2{font-size:18px}.card{background:white;border:1px solid #dde3eb;border-radius:14px;padding:18px;margin:16px 0}.row{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}button,a.save{border:0;border-radius:9px;padding:12px 15px;background:#235bce;color:white;font-size:15px;cursor:pointer;text-decoration:none;display:inline-block}button:disabled{opacity:.45;cursor:default}#stop{background:#b83444}.small{font-size:13px;color:#526071;line-height:1.7;overflow-wrap:anywhere}.meter{height:16px;background:#e8edf5;border-radius:8px;overflow:hidden}#level{height:100%;width:0;background:#329767}label{display:block;margin:12px 0 6px}input[type=text]{width:100%;padding:10px;border:1px solid #c9d1dc;border-radius:7px}input[type=range]{width:100%}canvas{display:block;width:100%;height:100px;background:#f7f9fc;border-radius:8px}audio{width:100%;margin:10px 0}.clip{border-top:1px solid #dde3eb;padding:14px 0}#error{color:#a52a36;white-space:pre-wrap}.save{margin-right:8px}summary{cursor:pointer;font-weight:bold}#status{font-weight:bold}#runtimeState{font-weight:bold}#updateNotice{white-space:pre-wrap}
 </style>
 </head>
 <body>
 <main>
-<h1>音声・体動 ZIP出力テスト <small>v03</small></h1>
+<h1>音声・体動 ZIP出力テスト <small>v04</small></h1>
+<p id="runtimeState" class="small" role="status">実行中：v04 ／ 起動確認中</p>
+<p id="updateNotice" class="small" role="status">更新確認を準備しています。</p>
 <p class="small">短時間テスト用。音声と体動を共通時間軸で保存します。診断・睡眠判定は行いません。</p>
 <section class="card">
 <div id="status" role="status">停止中</div>
@@ -35,19 +39,37 @@
 <div id="clips"></div>
 </section>
 <section class="card"><details><summary>GitHubから最新版を取得</summary>
-<p class="small">自身が管理・信頼する公開リポジトリを指定してください。取得したHTMLはこのページで実行されます。非公開リポジトリは非対応です。</p>
-<label for="repo">リポジトリ（所有者/名前）</label><input id="repo" type="text" placeholder="owner/repository" autocomplete="off">
+<p class="small">初期取得先は matsuodentalassociation/sleep_track の main/index.html です。自身が管理・信頼する公開リポジトリのみ指定してください。取得したHTMLはこのページで実行されます。非公開リポジトリは非対応です。</p>
+<label for="repo">リポジトリ（所有者/名前）</label><input id="repo" type="text" value="matsuodentalassociation/sleep_track" autocomplete="off">
 <label for="branch">ブランチ</label><input id="branch" type="text" value="main" autocomplete="off">
-<label for="path">HTMLファイルの場所</label><input id="path" type="text" value="audio-time-web-check_v03.html" autocomplete="off">
-<label><input id="autoUpdate" type="checkbox" checked> 次回起動時も最新版を確認・適用</label>
+<label for="path">HTMLファイルの場所</label><input id="path" type="text" value="index.html" autocomplete="off">
+<label><input id="autoUpdate" type="checkbox" checked> 起動時も最新版を確認・適用</label>
 <div class="row"><button id="update">設定を保存して最新版を適用</button><button id="forget">更新設定を解除</button></div>
-<p id="updateState" class="small">取得先は未設定です。</p>
+<p id="updateState" class="small" role="status">取得先：matsuodentalassociation/sleep_track / main / index.html</p>
+<p class="small">最新コミットSHAを取得し、そのSHAに固定したHTMLを取得します。通信失敗時は現在の版を維持します。記録中・未保存の記録がある状態では自動適用しません。GitHub APIの利用制限中も現在の版を維持します。</p>
 </details></section>
 <p class="small">ページを閉じると未保存の記録は消えます。音声・体動はサーバーへ送信しません。更新確認時だけGitHubへ通信します。HTTPSまたはlocalhostとマイク・センサーの権限が必要です。画面非表示時は記録を停止します。</p>
 </main>
 <script>
+// 文書再適用時もグローバルのconst/letを再宣言しない。
+(() => {
 'use strict';
-const VERSION='03',CONFIG_KEY='sleepRecorder.github.v2';
+
+const VERSION='04';
+const CONFIG_KEY='sleepRecorder.github.v3';
+const LEGACY_CONFIG_KEY='sleepRecorder.github.v2';
+const DEFAULT_CONFIG=Object.freeze({
+ repo:'matsuodentalassociation/sleep_track',
+ branch:'main',
+ path:'index.html',
+ auto:true
+});
+
+// 再適用後に、旧インスタンスが新しい画面を操作しないための識別子。
+const INSTANCE={};
+window.__sleepRecorderInstance=INSTANCE;
+const isCurrent=()=>window.__sleepRecorderInstance===INSTANCE;
+
 const $=id=>document.getElementById(id),rows=[],clips=[],sessions=[],points=[];
 const columns=['session','event','epoch_ms','iso_utc','elapsed_ms','duration_seconds','audio_file','mime_type','accel_x','accel_y','accel_z','gravity_x','gravity_y','gravity_z','rotation_alpha','rotation_beta','rotation_gamma','sensor_interval_ms','note'];
 let stream=null,ctx=null,analyser=null,samples=null,source=null,silent=null;
@@ -57,13 +79,18 @@ let originClock=0,originEpoch=0,session='',currentSession=null,lastMotion=-Infin
 let motionCount=0,motionThisSession=0,audioFrames=0,lastAudioLevel=0;
 const finite=x=>typeof x==='number'&&Number.isFinite(x)?x:'';
 const fixed=x=>Number(x.toFixed(3));
+
 function buttons(){
+ if(!isCurrent())return;
  $('start').disabled=active||starting||stopping||packing||updating;
  $('stop').disabled=!active||stopping;
  $('zip').disabled=!rows.length||active||starting||stopping||packing||updating;
  $('csv').disabled=!rows.length||active||starting||stopping||packing||updating;
  $('update').disabled=active||starting||stopping||packing||updating;
- $('forget').disabled=updating;
+ $('forget').disabled=active||starting||stopping||packing||updating;
+ for(const id of ['repo','branch','path','autoUpdate']){
+  $(id).disabled=updating;
+ }
 }
 function addRow(event,data={},clock=performance.now()){
  const elapsed=fixed(clock-originClock),epoch=Math.round(originEpoch+elapsed);
@@ -74,6 +101,7 @@ function link(parent,blob,name,text){const a=document.createElement('a');a.href=
 function sortedRows(){return [...rows].sort((a,b)=>a.epoch_ms-b.epoch_ms);}
 function csvBlob(){const quote=v=>'"'+String(v??'').replace(/"/g,'""')+'"';return new Blob(['\uFEFF'+[columns.join(','),...sortedRows().map(r=>columns.map(k=>quote(r[k])).join(','))].join('\r\n')],{type:'text/csv;charset=utf-8'});}
 $('threshold').oninput=()=>{$('thresholdValue').textContent=Number($('threshold').value).toFixed(3);};
+
 function beginClip(){
  const type=['audio/mp4','audio/webm;codecs=opus','audio/webm'].find(t=>MediaRecorder.isTypeSupported(t));
  const r=type?new MediaRecorder(stream,{mimeType:type}):new MediaRecorder(stream);
@@ -147,6 +175,7 @@ $('start').onclick=async()=>{
 $('stop').onclick=stop;
 $('csv').onclick=()=>{const a=link(document.body,csvBlob(),'sleep_log_'+Date.now()+'.csv','CSV');a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),60000);};
 document.addEventListener('visibilitychange',()=>{if(document.hidden&&active){addRow('visibility_stop',{note:'画面非表示で停止'});stop();}});
+
 // 外部ライブラリ不要のZIP（無圧縮／UTF-8ファイル名／CRC32）。短時間テスト向け。
 const crcTable=Uint32Array.from({length:256},(_,n)=>{let c=n;for(let k=0;k<8;k++)c=(c&1)?0xedb88320^(c>>>1):c>>>1;return c>>>0;});
 function crc32(bytes){let c=0xffffffff;for(const b of bytes)c=crcTable[(c^b)&255]^(c>>>8);return (c^0xffffffff)>>>0;}
@@ -171,38 +200,392 @@ $('zip').onclick=async()=>{
  try{
   const root='sleep_record_'+Date.now(),audio=clips.map(c=>({...c.meta}));
   const manifest={schema_version:1,app_version:VERSION,created_iso_utc:new Date().toISOString(),sessions,audio,log_file:'log.csv',units:{elapsed_ms:'ms from each session origin',accel:'m/s^2, excluding gravity',gravity:'m/s^2, INCLUDING gravity (legacy CSV column name)',rotation:'degrees/second, NOT angles',sensor_interval_ms:'browser reported interval; saved events are throttled separately'},timing:{epoch:'session origin Date.now + performance.now delta',audio_start:'recorder start request, not sample-exact',audio_duration:'monotonic clock operation interval, not decoded audio duration',motion:'event handler time, not hardware timestamp'},motion_save_limit_hz:20,pre_roll_seconds:0,log_row_count:rows.length,motion_row_count:motionCount,audio_file_count:clips.length,audio_total_bytes:clips.reduce((n,c)=>n+c.blob.size,0)};
-  const readme='音声・体動ログ v03\n\nlog.csv：全イベント。sessionごとにelapsed_msを解釈してください。\nmanifest.json：セッション原点と各音声の配置情報。\naudio/：録音した音声ファイル。CSVのaudio_fileとJSONのfileはこのフォルダーを基準にした相対パスです。\n\ngravity_* は重力込み加速度。rotation_* は角速度（度/秒）で角度ではありません。\n音声時刻・時間は録音操作基準で、サンプル精度の同期は保証しません。無録音の空白区間を無音・無呼吸とは判定できません。\n本ZIPは無圧縮です。診断・睡眠判定は行いません。\n';
+  const readme='音声・体動ログ v04\n\nlog.csv：全イベント。sessionごとにelapsed_msを解釈してください。\nmanifest.json：セッション原点と各音声の配置情報。\naudio/：録音した音声ファイル。CSVのaudio_fileとJSONのfileはこのフォルダーを基準にした相対パスです。\n\ngravity_* は重力込み加速度。rotation_* は角速度（度/秒）で角度ではありません。\n音声時刻・時間は録音操作基準で、サンプル精度の同期は保証しません。無録音の空白区間を無音・無呼吸とは判定できません。\n本ZIPは無圧縮です。診断・睡眠判定は行いません。\n';
   const files=[{name:root+'/log.csv',blob:csvBlob()},{name:root+'/manifest.json',blob:new Blob([JSON.stringify(manifest,null,2)],{type:'application/json'})},{name:root+'/README.txt',blob:new Blob([readme],{type:'text/plain;charset=utf-8'})},...clips.map(c=>({name:root+'/'+c.meta.file,blob:c.blob}))];
   const blob=await makeZip(files);$('zipLinks').querySelectorAll('a').forEach(a=>URL.revokeObjectURL(a.href));$('zipLinks').replaceChildren();link($('zipLinks'),blob,root+'.zip','ZIPを保存');$('exportState').textContent=`ZIP作成完了：音声${clips.length}件、体動${motionCount}件、${(blob.size/1024/1024).toFixed(2)}MB。「ZIPを保存」を押してください。`;
  }catch(e){$('exportState').textContent='ZIP作成失敗：'+e.message;}
  finally{packing=false;buttons();}
 };
-// GitHub更新：キャッシュ回避＋ブランチ最新コミットSHAから取得する。
-function loadConfig(){try{return JSON.parse(localStorage.getItem(CONFIG_KEY)||'null');}catch{return null;}}
-function valid(c){return c&&/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(c.repo)&&c.branch&&c.path&&!c.path.split('/').includes('..');}
-function bust(url){return url+(url.includes('?')?'&':'?')+'_cb='+Date.now()+'_'+Math.random().toString(36).slice(2);}
-async function fresh(url,json=false){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);try{const r=await fetch(bust(url),{cache:'no-store',credentials:'omit',signal:controller.signal});if(!r.ok)throw new Error('GitHub HTTP '+r.status);return json?await r.json():await r.text();}finally{clearTimeout(timeout);}}
-async function update(c,automatic=false){
- if(active||starting||stopping||packing||updating)return;if(!valid(c)){$('updateState').textContent='取得先の入力を確認してください';return;}
- if(automatic&&rows.length)return;if(!automatic&&rows.length&&!confirm('更新すると未保存の記録が消えます。ZIPなどで保存済みですか？'))return;
- updating=true;buttons();$('updateState').textContent='最新コミットを確認中…';
- try{
-  const commit=await fresh('https://api.github.com/repos/'+c.repo+'/commits/'+encodeURIComponent(c.branch),true),sha=commit.sha;if(!/^[a-f0-9]{40}$/i.test(sha||''))throw new Error('不正なコミットSHA');
-  const key=[c.repo,c.branch,c.path,sha].join('|');
-  // タブ履歴ではなく、現在実行中の文書に埋め込んだ印で判定する。
-  if(document.querySelector('meta[name="sleep-applied-commit"]')?.content===key){$('updateState').textContent='最新版適用済み：'+sha.slice(0,12);return;}
-  const path=c.path.split('/').map(encodeURIComponent).join('/'),base='https://raw.githubusercontent.com/'+c.repo+'/'+sha+'/'+path.slice(0,path.lastIndexOf('/')+1);
-  const html=await fresh('https://raw.githubusercontent.com/'+c.repo+'/'+sha+'/'+path);if(!/<html[\s>]/i.test(html)||!/<\/html\s*>/i.test(html))throw new Error('取得先がHTMLではありません');
-  const parsed=new DOMParser().parseFromString(html,'text/html');parsed.querySelectorAll('base,meta[name="sleep-applied-commit"]').forEach(el=>el.remove());
-  parsed.querySelectorAll('script[src],link[rel="stylesheet"][href],img[src]').forEach(el=>{const attr=el.tagName==='LINK'?'href':'src',value=el.getAttribute(attr);if(value&&!/^(data:|blob:)/i.test(value)){const url=new URL(value,base);if(/^https?:$/.test(url.protocol))el.setAttribute(attr,bust(url.href));}});
-  const baseEl=parsed.createElement('base');baseEl.href=base;parsed.head.prepend(baseEl);const mark=parsed.createElement('meta');mark.name='sleep-applied-commit';mark.content=key;parsed.head.appendChild(mark);
-  document.open();document.write('<!DOCTYPE html>\n'+parsed.documentElement.outerHTML);document.close();
- }catch(e){if($('updateState'))$('updateState').textContent='更新失敗。現在の版を維持：'+e.message;}
- finally{updating=false;if($('start'))buttons();}
+
+// ============================================================
+// 更新処理
+// ・起動時に既定の公開先を確認
+// ・古い標準設定をmain/index.htmlへ移行
+// ・キャッシュバスティング＋fetch cache:no-store
+// ・ブランチ最新SHA取得後、そのSHAのHTMLを取得
+// ・IIFEで再宣言衝突を防止
+// ・適用SHAと実行版を起動後に表示
+// ============================================================
+
+let config={...DEFAULT_CONFIG};
+let configurationNotice='';
+
+function updateMessage(text){
+ if(!isCurrent())return;
+ $('updateState').textContent=text;
+ $('updateNotice').textContent=text;
 }
-$('update').onclick=()=>{const c={repo:$('repo').value.trim(),branch:$('branch').value.trim(),path:$('path').value.trim().replace(/^\/+/,''),auto:$('autoUpdate').checked};if(!valid(c)){$('updateState').textContent='入力を確認してください';return;}if(!confirm('指定したGitHubのHTMLを実行します。ご自身が管理・信頼する取得先ですか？'))return;try{localStorage.setItem(CONFIG_KEY,JSON.stringify(c));}catch(e){$('updateState').textContent='設定保存失敗：'+e.message;return;}update(c);};
-$('forget').onclick=()=>{try{localStorage.removeItem(CONFIG_KEY);}catch{}$('updateState').textContent='更新設定を解除しました';};
-const config=loadConfig();if(valid(config)){$('repo').value=config.repo;$('branch').value=config.branch;$('path').value=config.path;$('autoUpdate').checked=!!config.auto;$('updateState').textContent='取得先：'+config.repo+' / '+config.path;if(config.auto)update(config,true);}buttons();
+
+function valid(c){
+ return !!(
+  c&&typeof c.repo==='string'&&
+  /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(c.repo)&&
+  typeof c.branch==='string'&&c.branch.trim()&&
+  !/[\u0000-\u001f\u007f]/.test(c.branch)&&
+  typeof c.path==='string'&&c.path&&
+  !c.path.startsWith('/')&&
+  !c.path.includes('\\')&&
+  !/[?#\u0000-\u001f\u007f]/.test(c.path)&&
+  !c.path.split('/').some(part=>part===''||part==='.'||part==='..')&&
+  /\.html?$/i.test(c.path)
+ );
+}
+
+function normalize(c){
+ return {
+  repo:typeof c?.repo==='string'?c.repo.trim():'',
+  branch:typeof c?.branch==='string'?c.branch.trim():'',
+  path:typeof c?.path==='string'?c.path.trim().replace(/^\/+/,''):'',
+  auto:typeof c?.auto==='boolean'?c.auto:true
+ };
+}
+
+function readStored(key){
+ const raw=localStorage.getItem(key);
+ return raw?JSON.parse(raw):null;
+}
+
+function loadConfig(){
+ try{
+  const saved=readStored(CONFIG_KEY);
+  if(saved){
+   const c=normalize(saved);
+   if(valid(c))return c;
+   configurationNotice='保存設定が不正なため、既定の取得先を使用します。';
+  }
+
+  const legacy=readStored(LEGACY_CONFIG_KEY);
+  if(legacy){
+   let c=normalize(legacy);
+   if(!c.repo){
+    c={...DEFAULT_CONFIG,auto:c.auto};
+   }
+   if(
+    c.repo.toLowerCase()===DEFAULT_CONFIG.repo.toLowerCase()&&
+    /^audio-time-web-check_v\d+\.html$/i.test(c.path)
+   ){
+    c.path='index.html';
+    configurationNotice='旧版の標準ファイル名を index.html に移行しました。';
+   }
+   if(valid(c)){
+    localStorage.setItem(CONFIG_KEY,JSON.stringify(c));
+    return c;
+   }
+  }
+ }catch(e){
+  configurationNotice='設定の読込・保存ができません。今回の起動は既定の取得先を使用します。';
+ }
+ return {...DEFAULT_CONFIG};
+}
+
+function showConfig(c){
+ $('repo').value=c.repo;
+ $('branch').value=c.branch;
+ $('path').value=c.path;
+ $('autoUpdate').checked=c.auto;
+}
+
+function targetText(c){
+ return c.repo+' / '+c.branch+' / '+c.path;
+}
+
+function bust(input){
+ const url=new URL(input);
+ url.searchParams.set('_cb',Date.now()+'_'+Math.random().toString(36).slice(2));
+ return url.href;
+}
+
+async function fresh(url,json=false){
+ const controller=new AbortController();
+ const timeout=setTimeout(()=>controller.abort(),20000);
+ try{
+  const response=await fetch(bust(url),{
+   method:'GET',
+   cache:'no-store',
+   credentials:'omit',
+   referrerPolicy:'no-referrer',
+   signal:controller.signal,
+   headers:{
+    Accept:json?'application/vnd.github+json':'text/html, text/plain;q=0.9, */*;q=0.5'
+   }
+  });
+  if(!response.ok){
+   if(response.status===403||response.status===429){
+    throw new Error('GitHub HTTP '+response.status+'（API利用制限またはアクセス制限）');
+   }
+   if(response.status===404){
+    throw new Error('GitHub HTTP 404（リポジトリ・ブランチ・HTMLの場所を確認してください）');
+   }
+   throw new Error('GitHub HTTP '+response.status);
+  }
+  return json?await response.json():await response.text();
+ }catch(e){
+  if(e.name==='AbortError')throw new Error('GitHub取得が20秒でタイムアウトしました');
+  throw e;
+ }finally{
+  clearTimeout(timeout);
+ }
+}
+
+function appliedMarker(){
+ const raw=document.querySelector('meta[name="sleep-applied-commit"]')?.content;
+ if(!raw)return null;
+ try{
+  const mark=JSON.parse(raw);
+  if(
+   mark&&typeof mark.repo==='string'&&
+   typeof mark.branch==='string'&&typeof mark.path==='string'&&
+   /^[a-f0-9]{40}$/i.test(mark.sha||'')
+  )return mark;
+ }catch{}
+ return null;
+}
+
+function sameTarget(mark,c){
+ return !!mark&&
+  mark.repo.toLowerCase()===c.repo.toLowerCase()&&
+  mark.branch===c.branch&&mark.path===c.path;
+}
+
+function runtimeState(){
+ if(!isCurrent())return;
+ const mark=appliedMarker();
+ $('runtimeState').textContent=mark
+  ?'実行中：v'+VERSION+' ／ 起動済み ／ 適用コミット：'+mark.sha.slice(0,12)
+  :'実行中：v'+VERSION+' ／ 起動済み ／ 配信HTML（適用コミット未確認）';
+}
+
+function validateHTML(html){
+ if(
+  typeof html!=='string'||
+  !/<html[\s>]/i.test(html)||
+  !/<\/html\s*>/i.test(html)
+ )throw new Error('取得先が完全なHTMLではありません');
+
+ const parsed=new DOMParser().parseFromString(html,'text/html');
+ const version=parsed.querySelector('meta[name="sleep-app-version"]')?.content;
+ const schema=parsed.querySelector('meta[name="sleep-update-schema"]')?.content;
+
+ if(!/^\d+$/.test(version||'')){
+  throw new Error('取得HTMLに版識別情報がありません。GitHubの index.html をv04以降に差し替えてください');
+ }
+ if(Number(version)<Number(VERSION)){
+  throw new Error('取得先はv'+version+'です。現在のv'+VERSION+'より古いため適用しません');
+ }
+ if(schema!=='4'){
+  throw new Error('取得HTMLの更新方式に互換性がないため適用しません');
+ }
+ for(const id of ['start','stop','zip','csv','update','updateState','runtimeState','updateNotice']){
+  if(!parsed.getElementById(id)){
+   throw new Error('取得HTMLに必要な画面要素がありません：'+id);
+  }
+ }
+ if(!parsed.querySelector('script')){
+  throw new Error('取得HTMLに実行コードがありません');
+ }
+ return parsed;
+}
+
+function prepareHTML(parsed,c,sha){
+ const encodedPath=c.path.split('/').map(encodeURIComponent).join('/');
+ const rawURL='https://raw.githubusercontent.com/'+c.repo+'/'+sha+'/'+encodedPath;
+ const assetBase=new URL('.',rawURL).href;
+
+ parsed.querySelectorAll('base,meta[name="sleep-applied-commit"]').forEach(el=>el.remove());
+
+ // 将来外部リソースを追加する場合も、コミット固定URLとキャッシュ回避を使用する。
+ parsed.querySelectorAll('script[src],link[rel="stylesheet"][href],img[src]').forEach(el=>{
+  const attr=el.tagName==='LINK'?'href':'src';
+  const value=el.getAttribute(attr);
+  if(!value||/^(data:|blob:)/i.test(value))return;
+  const resourceURL=new URL(value,assetBase);
+  if(/^https?:$/.test(resourceURL.protocol)){
+   el.setAttribute(attr,bust(resourceURL.href));
+  }
+ });
+
+ const baseEl=parsed.createElement('base');
+ baseEl.href=assetBase;
+ parsed.head.prepend(baseEl);
+
+ const mark=parsed.createElement('meta');
+ mark.name='sleep-applied-commit';
+ mark.content=JSON.stringify({
+  repo:c.repo,
+  branch:c.branch,
+  path:c.path,
+  sha,
+  applied_iso_utc:new Date().toISOString()
+ });
+ parsed.head.appendChild(mark);
+
+ // 保存領域が利用できなくても、適用後の文書に今回の取得先を引き継ぐ。
+ const configMeta=parsed.createElement('meta');
+ configMeta.name='sleep-runtime-update-config';
+ configMeta.content=JSON.stringify(c);
+ parsed.querySelectorAll('meta[name="sleep-runtime-update-config"]').forEach(el=>el.remove());
+ parsed.head.appendChild(configMeta);
+
+ return '<!DOCTYPE html>\n'+parsed.documentElement.outerHTML;
+}
+
+async function update(c,automatic=false){
+ if(!isCurrent()||active||starting||stopping||packing||updating)return;
+ if(!valid(c)){
+  updateMessage('取得先の入力を確認してください。');
+  return;
+ }
+ if(automatic&&rows.length){
+  updateMessage('未保存の記録があるため、自動更新は適用しません。');
+  return;
+ }
+ if(!automatic&&rows.length&&!confirm('更新すると現在の記録が消えます。ZIPなどで保存済みですか？')){
+  return;
+ }
+
+ updating=true;
+ buttons();
+ updateMessage('最新コミットを確認中：'+targetText(c));
+
+ try{
+  const commitURL='https://api.github.com/repos/'+c.repo+'/commits/'+encodeURIComponent(c.branch);
+  const commit=await fresh(commitURL,true);
+  if(!isCurrent())return;
+
+  const sha=commit.sha;
+  if(!/^[a-f0-9]{40}$/i.test(sha||'')){
+   throw new Error('GitHubから有効なコミットSHAを取得できませんでした');
+  }
+
+  const currentMark=appliedMarker();
+  if(sameTarget(currentMark,c)&&currentMark.sha===sha){
+   runtimeState();
+   updateMessage('最新版適用済み：v'+VERSION+' ／ '+sha.slice(0,12)+' ／ '+targetText(c));
+   return;
+  }
+
+  updateMessage('最新コミット '+sha.slice(0,12)+' のHTMLを取得中…');
+  const encodedPath=c.path.split('/').map(encodeURIComponent).join('/');
+  const html=await fresh('https://raw.githubusercontent.com/'+c.repo+'/'+sha+'/'+encodedPath);
+  if(!isCurrent())return;
+
+  const parsed=validateHTML(html);
+  const nextHTML=prepareHTML(parsed,c,sha);
+  const nextVersion=parsed.querySelector('meta[name="sleep-app-version"]').content;
+
+  updateMessage('v'+nextVersion+' を適用中：'+sha.slice(0,12));
+
+  // v04以降はすべてIIFE内で実行するため、同じWindowでも
+  // VERSIONやCONFIG_KEYなどのconst/letが再宣言衝突しない。
+  // 旧処理のfinallyはisCurrent()で新文書への操作を防ぐ。
+  document.open();
+  document.write(nextHTML);
+  document.close();
+
+  // 同期実行される単一HTMLの起動確認。
+  // 新文書が起動していればINSTANCEは別のものに置き換わる。
+  if(isCurrent()){
+   const message='HTMLは適用しましたが、新しいアプリの起動を確認できませんでした。通常のブラウザーで再読み込みしてください。';
+   if($('updateNotice'))$('updateNotice').textContent=message;
+   if($('updateState'))$('updateState').textContent=message;
+   if($('runtimeState'))$('runtimeState').textContent='起動確認失敗 ／ 取得コミット：'+sha.slice(0,12);
+  }
+ }catch(e){
+  if(isCurrent()){
+   updateMessage('更新失敗。現在のv'+VERSION+'を維持：'+e.message);
+  }
+ }finally{
+  if(isCurrent()){
+   updating=false;
+   buttons();
+  }
+ }
+}
+
+$('update').onclick=()=>{
+ const c=normalize({
+  repo:$('repo').value,
+  branch:$('branch').value,
+  path:$('path').value,
+  auto:$('autoUpdate').checked
+ });
+ if(!valid(c)){
+  updateMessage('リポジトリ・ブランチ・HTMLファイルの場所を確認してください。');
+  return;
+ }
+ if(!confirm('指定したGitHubのHTMLをこのページで実行します。ご自身が管理・信頼する取得先ですか？')){
+  return;
+ }
+ config=c;
+ try{
+  localStorage.setItem(CONFIG_KEY,JSON.stringify(c));
+ }catch(e){
+  updateMessage('設定の永続保存はできません。今回の起動のみ指定先を使用します。');
+ }
+ update(c,false);
+};
+
+$('forget').onclick=()=>{
+ if(active||starting||stopping||packing||updating)return;
+ // 単純削除では既定の自動更新が復活するため、auto:falseを保存する。
+ config={...DEFAULT_CONFIG,auto:false};
+ showConfig(config);
+ try{
+  localStorage.removeItem(LEGACY_CONFIG_KEY);
+  localStorage.setItem(CONFIG_KEY,JSON.stringify(config));
+  updateMessage('更新設定を解除し、自動更新を停止しました。現在実行中の版は維持します。');
+ }catch(e){
+  updateMessage('この起動で自動更新を停止しました。保存できないため次回起動では既定設定に戻る場合があります。');
+ }
+};
+
+function runtimeConfig(){
+ const raw=document.querySelector('meta[name="sleep-runtime-update-config"]')?.content;
+ if(!raw)return null;
+ try{
+  const c=normalize(JSON.parse(raw));
+  return valid(c)?c:null;
+ }catch{
+  return null;
+ }
+}
+
+config=runtimeConfig()||loadConfig();
+showConfig(config);
+runtimeState();
+buttons();
+
+const mark=appliedMarker();
+if(mark){
+ updateMessage('最新版HTMLが起動しました：v'+VERSION+' ／ 適用コミット：'+mark.sha.slice(0,12));
+}else{
+ updateMessage(
+  (configurationNotice?configurationNotice+'\\n':'')+
+  '取得先：'+targetText(config)+(config.auto?' ／ 自動確認あり':' ／ 自動確認なし')
+ );
+}
+
+// パーサー実行中のdocument.writeを避け、初回スクリプト終了後に確認する。
+setTimeout(()=>{
+ if(isCurrent()&&config.auto)update(config,true);
+},0);
+
+// ブラウザーの戻る・進むキャッシュから復元された場合も再確認。
+window.addEventListener('pageshow',e=>{
+ if(e.persisted&&isCurrent()&&config.auto)update(config,true);
+});
+
+})();
 </script>
 </body>
 </html>
