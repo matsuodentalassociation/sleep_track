@@ -1,134 +1,273 @@
 <!DOCTYPE html>
-<html lang="ja"><head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ST Tracker V4</title>
-<style>
-body{margin:0 auto;max-width:520px;padding:16px;background:#0b1020;color:#e8ecf5;font:15px/1.5 -apple-system,sans-serif}
-.c{background:#161d33;border-radius:12px;padding:12px;margin-bottom:12px}
-.big{font-size:42px;font-weight:700;text-align:center}
-button{width:100%;padding:14px;margin-top:8px;border:0;border-radius:10px;font-size:16px;font-weight:700;color:#fff;background:#4c8dff}
-button:disabled{opacity:.4}.r{background:#ef4444}.s{background:#3a4466}
-canvas{width:100%;height:120px;background:#000;border-radius:8px}
-pre{margin:0;font-size:12px;color:#a8b2cc;white-space:pre-wrap}
-.clip{border-top:1px solid #2a3350;padding:8px 0;font-size:13px}
-.clip audio{width:100%;height:32px}.clip button{width:auto;padding:6px 12px;font-size:13px;margin:4px 0 0}
-[hidden]{display:none!important}
-h2{font-size:18px;margin:0 0 10px}.note{font-size:13px;color:#b8c4de}
-.status{padding:10px;background:#0b1020;border-radius:8px;overflow-wrap:anywhere}
-</style></head><body>
-<h1 style="font-size:18px">睡眠記録 Tracker V4</h1>
-<section id="permission" class="c">
-  <h2>測定に必要な権限について</h2>
-  <p>このアプリは、睡眠中の<strong>音（いびき・環境音など）</strong>と<strong>振動（寝返りなどによる端末の動き）</strong>を記録します。</p>
-  <p>測定のため、<strong>マイクとモーションセンサーへのアクセスを許可してください。</strong><br>下のボタンを押すと、必要に応じて端末の許可確認が表示されます。</p>
-  <p><strong>この段階では記録を保存しません。「測定開始」を押してから記録を始めます。</strong></p>
-  <p class="note">入力確認と開始待ちの間はマイクを使用しますが、音声・測定ログは保存しません。体動の確認が完了しない場合は、端末を少し動かして再試行してください。</p>
-  <div class="status" role="status" aria-live="polite">
-    <div>マイク：<b id="micStatus">未確認</b></div>
-    <div>モーション許可：<b id="motionPermission">未確認</b></div>
-    <div>体動の実受信：<b id="motionStatus">未確認</b></div>
-    <div id="permissionMessage">権限を確認してからスタート画面へ進みます。</div>
-  </div>
-  <button id="check">権限を確認して進む</button>
-  <button id="audioOnly" class="s" hidden>音声のみで進む</button>
-</section>
-<section id="tracker" hidden>
-<div class="c">
-  <div id="readyStatus" class="status" role="status" aria-live="polite"></div>
-  <p class="note">「測定開始」で記録を始めます。測定中は画面を表示したままにしてください。音量は相対値で、校正済みの音圧レベルではありません。</p>
-  <div class="big" id="clock">00:00:00</div>
-  <div>音量: <b id="db">--</b> dB　体動: <b id="g">--</b> G</div>
-  <div>状態: <b id="st">待機中</b>　クリップ: <b id="cnt2">0</b>本</div>
-  <canvas id="cv" width="480" height="120"></canvas>
-  <div id="calStatus" class="note">開始後、最初の30秒で環境音を測定します。端末を寝るときの位置に置き、できるだけ静かにしてください。</div>
-  <p class="note">音量で検知するため、いびき以外の音も記録されます。医療診断用ではありません。画面点灯・充電状態を基本とし、連続測定は保証されません。</p>
-</div>
-<div class="c">
-  <button id="start" disabled>測定開始</button>
-  <button id="stop" class="r" disabled>測定終了</button>
-  <button id="back" class="s">権限を再確認する</button>
-  <button id="export" class="s">音声付きログをZIP出力</button>
-  <button id="csv" class="s">1秒ログをCSV保存</button>
-  <button id="clear" class="s">すべて消去</button>
-</div>
-<div class="c"><b>録音クリップ</b> (新しい順・最大30本)<div id="list"></div></div>
-</section>
-<details class="c"><summary>GitHub更新設定</summary>
-  <p class="note">リポジトリ・ブランチ・V4の配置パスを指定してください。測定停止後に最新コミットの単一HTMLを取得して適用します。未設定では更新できません。</p>
-  <label>owner/repository <input id="repo" placeholder="owner/repository"></label><br>
-  <label>ブランチ <input id="branch" value="main"></label><br>
-  <label>HTMLパス <input id="path" value="睡眠記録_tracker_V4.html"></label>
-  <button id="update" class="s">最新コミットを確認・適用</button>
-  <div id="updateStatus" class="note" role="status">更新未確認（既存版を使用中）</div>
-</details>
-<div class="c"><pre id="log">待機中（記録は開始していません）</pre></div>
-<script>var t,e,n,a,o,r,i,s=function(t){return document.getElementById(t)},c=16e3,l=3*c,u=5*c,d=120*c,f=[],h=0,m=null,g=[],p=[],v=!1,w=!1,b=!1,x=!1,S=!1,y=!1,C=!1,k=0,U=!1,E=!1,M=!1,_=[],I={dbMax:-120,dbSum:0,n:0,gMax:0,gSum:0,gn:0},P=null,D=!1,O=0,T=[],A=30,L=6,R=0,j=0,B=0,F=null,H="",z=[],N=!1,V=[],J=0;try{z=JSON.parse(localStorage.getItem("st_sessions")||"[]"),Array.isArray(z)||(z=[])}catch(t){}var q,Z,G=[],W=0,K=!1,$=[],Y=0,Q=0,X=0,tt=0,et=-120;function nt(t){s("log").textContent=t+"\n"+s("log").textContent.split("\n").slice(0,12).join("\n")}function at(){I={dbMax:-120,dbSum:0,n:0,gMax:0,gSum:0,gn:0}}function ot(){try{localStorage.setItem("st_sessions",JSON.stringify(z))}catch(t){nt("測定情報保存失敗: "+t.message)}}try{var rt=JSON.parse(localStorage.getItem("st_rows")||"[]");Array.isArray(rt)&&(f=rt)}catch(t){}function it(){try{localStorage.setItem("st_rows",JSON.stringify(f))}catch(t){nt("ログ保存失敗:"+t.message)}}function st(){return new Promise((function(t,e){var n=indexedDB.open("st_tracker",1);n.onupgradeneeded=function(){n.result.createObjectStore("clips",{keyPath:"start"})},n.onsuccess=function(){q=n.result,t()},n.onerror=function(){e(n.error)}}))}function ct(t){return new Promise((function(e,n){var a=q.transaction("clips","readwrite");a.objectStore("clips").put(t),a.oncomplete=e,a.onerror=a.onabort=function(){n(a.error||new Error("保存中断"))}}))}function lt(){return new Promise((function(t,e){var n=q.transaction("clips").objectStore("clips").getAll();n.onsuccess=function(){t(n.result)},n.onerror=function(){e(n.error)}}))}function ut(){return new Promise((function(t,e){var n=q.transaction("clips","readwrite");n.objectStore("clips").clear(),n.oncomplete=t,n.onerror=n.onabort=function(){e(n.error||new Error("消去中断"))}}))}function dt(t){var e=t.length,n=new ArrayBuffer(44+2*e),a=new DataView(n);function o(t,e){for(var n=0;n<e.length;n++)a.setUint8(t+n,e.charCodeAt(n))}o(0,"RIFF"),a.setUint32(4,36+2*e,!0),o(8,"WAVEfmt "),a.setUint32(16,16,!0),a.setUint16(20,1,!0),a.setUint16(22,1,!0),a.setUint32(24,c,!0),a.setUint32(28,2*c,!0),a.setUint16(32,2,!0),a.setUint16(34,16,!0),o(36,"data"),a.setUint32(40,2*e,!0);for(var r=0;r<e;r++)a.setInt16(44+2*r,t[r],!0);return new Blob([n],{type:"audio/wav"})}function ft(t){var e=new Date(t),n=function(t){return String(t).padStart(2,"0")};return n(e.getHours())+":"+n(e.getMinutes())+":"+n(e.getSeconds())}function ht(t,e){var n=new Date(t),a=function(t){return String(t).padStart(2,"0")};return"snore_"+n.getFullYear()+a(n.getMonth()+1)+a(n.getDate())+"_"+a(n.getHours())+a(n.getMinutes())+a(n.getSeconds())+"_"+String(e||t).replace(/[^a-zA-Z0-9_-]/g,"_")+".wav"}function mt(e){if(v){var n,a=e.inputBuffer.getChannelData(0),o=0;for(n=0;n<a.length;n++)o+=a[n]*a[n];if(et=20*Math.log10(Math.sqrt(o/a.length)+1e-8),I.dbSum+=et,I.n++,et>I.dbMax&&(I.dbMax=et),D){if(T.push(et),(O+=a.length)>=A*t.sampleRate){var r=T.slice().sort((function(t,e){return t-e})),i=r.length>>1,f=r.length%2?r[i]:(r[i-1]+r[i])/2;P=f+L,D=!1,T=[],z[z.length-1].baseline=f,z[z.length-1].threshold=P,z[z.length-1].calibrationEnd=Date.now(),ot(),s("calStatus").textContent="環境音の測定完了。環境音より大きな音を自動で記録します。",s("st").textContent="測定中",nt("環境音 "+f.toFixed(1)+" dB / 自動しきい値 "+P.toFixed(1)+" dB")}}else{var h;null===F?h=a:((h=new Float32Array(a.length+1))[0]=F,h.set(a,1));for(var m=t.sampleRate/c,g=[];tt<h.length-1;){var p=Math.floor(tt),w=tt-p,x=h[p]*(1-w)+h[p+1]*w;x=Math.max(-1,Math.min(1,x)),g.push(x<0?32768*x:32767*x),tt+=m}tt-=h.length-1,F=h[h.length-1];var S=Int16Array.from(g);if(S.length){B||(B=Date.now()-S.length/c*1e3);for(var C=0;C<S.length;)if(K){et>P&&(Q=0);var k=Math.min(S.length-C,d-Y,et>P?d:u-Q);k>0&&($.push(S.subarray(C,C+k)),Y+=k,R+=k,C+=k,et<=P&&(Q+=k)),(Q>=u||Y>=d)&&gt()}else{var U=S.subarray(C);for(G.push(U),W+=U.length,R+=U.length,C=S.length;W>l;){var E=W-l;G[0].length<=E?W-=G.shift().length:(G[0]=G[0].subarray(E),W-=E)}et>P&&(K=!0,j=R-W,$=G,Y=W,G=[],W=0,Q=0,X=B+j/c*1e3,s("st").textContent="いびき記録中")}}}}else b&&(y=!0)}function gt(){if(K){K=!1,s("st").textContent=v?"測定中":"終了";var t=new Int16Array(Y),e=0;$.forEach((function(n){t.set(n,e),e+=n.length}));var n=X,a=Math.max(Math.round(n),J+1);J=a;var o={start:a,actualStart:n,dur:Y/c,blob:dt(t),id:H+"_"+j,sessionId:H,sampleStart:j,sampleEnd:j+Y,sampleRate:c};$=[],Y=0,G=[],W=0,Q=0;var r=ct(o).then((function(){return nt("保存 "+ft(n)+" "+o.dur.toFixed(1)+"秒"),pt()})).catch((function(t){throw nt("クリップ保存失敗: "+t.message),t}));V.push(r),r.catch((function(){}))}}function pt(){return lt().then((function(t){t.sort((function(t,e){return(e.actualStart||e.start)-(t.actualStart||t.start)})),s("cnt2").textContent=t.length;var e=s("list");e.innerHTML="",_.forEach((function(t){URL.revokeObjectURL(t)})),_=[],t.slice(0,30).forEach((function(t){var n=URL.createObjectURL(t.blob);_.push(n);var a=document.createElement("div");a.className="clip",a.innerHTML=ft(t.actualStart||t.start)+" / "+t.dur.toFixed(1)+"秒 / "+Math.round(t.blob.size/1024)+'KB<br><audio controls preload="none" src="'+n+'"></audio><br>';var o=document.createElement("button");o.className="s",o.textContent="保存",o.onclick=function(){var e=document.createElement("a");e.href=n,e.download=ht(t.actualStart||t.start,t.id||t.start),document.body.appendChild(e),e.click(),e.remove()},a.appendChild(o),e.appendChild(a)}))})).catch((function(t){nt("クリップ一覧取得失敗: "+t.message)}))}function vt(t,e){return new Promise((function(n){var a=Date.now()+e;!function e(){return t()?n(!0):Date.now()>=a?n(!1):void setTimeout(e,100)}()}))}function wt(){return!(!r||!r.getAudioTracks().some((function(t){return"live"===t.readyState&&!t.muted})))}function bt(){if(E&&(window.removeEventListener("devicemotion",Ct),E=!1),n){n.onaudioprocess=null;try{n.disconnect()}catch(t){}n=null}if(a){try{a.disconnect()}catch(t){}a=null}if(o){try{o.disconnect()}catch(t){}o=null}if(r&&(r.getTracks().forEach((function(t){t.onended=null,t.stop()})),r=null),t){var i=t;t=null,i.close().catch((function(){}))}e=null,m=null}function xt(t){x=!1,s("permission").hidden=!1,s("tracker").hidden=!0,s("audioOnly").hidden=!0,s("start").disabled=!0,s("check").disabled=!1,s("check").textContent="権限を確認して進む",s("micStatus").textContent="未確認",s("motionPermission").textContent="未確認",s("motionStatus").textContent="未確認",s("permissionMessage").textContent=t||"権限を確認してからスタート画面へ進みます。"}function St(e){if(!wt()||!t||"running"!==t.state)return bt(),void xt("マイク入力が中断されました。再確認してください。");S=e,x=!0,s("permission").hidden=!0,s("tracker").hidden=!1,s("readyStatus").textContent="マイク：入力確認済み ／ 体動："+(e?"使用しない（音声のみ）":"実受信確認済み"),s("start").disabled=!M,s("g").textContent=e?"未使用":"--",s("st").textContent="開始待ち（記録なし）",nt(e?"音声のみの測定を選択（まだ記録していません）":"権限・入力確認完了（まだ記録していません）")}async function yt(){if(!(b||v||w||N)){bt(),x=!1,b=!0,y=!1,C=!1,k=0,U=!1,s("check").disabled=!0,s("audioOnly").hidden=!0,s("micStatus").textContent="確認中",s("motionPermission").textContent="確認中",s("motionStatus").textContent="受信待ち",s("permissionMessage").textContent="端末の許可確認に回答してください。";try{if(!window.isSecureContext)throw new Error("HTTPSで開いてください（localhostを除く）");if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error("この環境はマイク取得に対応していません");var i;if(window.DeviceMotionEvent&&"function"==typeof DeviceMotionEvent.requestPermission)try{i=Promise.resolve(DeviceMotionEvent.requestPermission()).then((function(t){return{value:t}}),(function(t){return{error:t}}))}catch(t){i=Promise.resolve({error:t})}else i=Promise.resolve({value:window.DeviceMotionEvent?"not-required":"unsupported"});var c=window.AudioContext||window.webkitAudioContext;if(!c)throw new Error("Web Audioに対応していません");var l=(t=new c).resume().then((function(){return null}),(function(t){return t}));window.addEventListener("devicemotion",Ct),E=!0,(r=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:!1,noiseSuppression:!1,autoGainControl:!1}})).getAudioTracks().forEach((function(t){t.onended=function(){v?(Mt(),nt("マイク入力が終了したため測定を停止しました。")):b||(bt(),xt("マイク入力が終了しました。再確認してください。"))}}));var u=await l;if(u)throw u;if("running"!==t.state)throw new Error("音声処理が停止しています。再試行してください");a=t.createMediaStreamSource(r),e=t.createAnalyser(),a.connect(e),(n=t.createScriptProcessor(4096,1,1)).onaudioprocess=mt,(o=t.createGain()).gain.value=0,a.connect(n),n.connect(o),o.connect(t.destination);var d=await i;d.error?s("motionPermission").textContent="要求エラー: "+d.error.message:"granted"===d.value?(s("motionPermission").textContent="許可済み",U=!0):"not-required"===d.value?(s("motionPermission").textContent="明示的な許可要求なし",U=!0):s("motionPermission").textContent="unsupported"===d.value?"非対応":"許可されていません",nt("モーション許可: "+s("motionPermission").textContent),s("permissionMessage").textContent="入力を確認中です。必要に応じて端末を少し動かしてください。";var f=await Promise.all([vt((function(){return y&&wt()}),3e3),U?vt((function(){return C}),4e3):Promise.resolve(!1)]);if(!f[0]||!wt())throw new Error("音声入力を確認できません。端末設定とマイク権限を確認して再試行してください");s("micStatus").textContent="入力確認済み（"+t.sampleRate+"Hz / "+t.state+"）",nt("マイクOK "+t.sampleRate+"Hz / "+t.state+"（保存なし）"),f[1]?(s("motionStatus").textContent="実受信確認済み",St(!1)):(s("motionStatus").textContent=U?"値を確認できません（待機時間4秒）":"利用できません",s("permissionMessage").textContent="体動は確認できませんでした。音声のみで進むか、権限・端末設定を確認して再試行してください。",s("audioOnly").hidden=!1,nt("体動の実受信なし。ユーザーの選択待ち"))}catch(t){bt(),s("micStatus").textContent="確認失敗: "+t.message,"受信待ち"===s("motionStatus").textContent&&(s("motionStatus").textContent="未確認"),s("permissionMessage").textContent="測定は開始していません。端末の権限設定を確認して再試行してください。",nt("権限・入力確認失敗: "+t.message)}finally{b=!1,s("check").disabled=!1,s("check").textContent="権限を再確認する"}}}function Ct(t){var e=t.accelerationIncludingGravity;if(e&&[e.x,e.y,e.z].every((function(t){return"number"==typeof t&&isFinite(t)}))&&(C=!0,k=Date.now(),v&&!S)){var n=Math.sqrt(e.x*e.x+e.y*e.y+e.z*e.z)/9.80665;if(null!==m){var a=Math.abs(n-m);I.gSum+=a,I.gn++,a>I.gMax&&(I.gMax=a)}m=n}}async function kt(){if(!(v||w||N)&&x)if(M){if(!wt()||!t)return bt(),void xt("マイク入力が中断されました。再確認してください。");w=!0,s("start").disabled=!0,s("back").disabled=!0;try{if(await t.resume(),"running"!==t.state||!wt())throw new Error("マイク入力を開始できません");if(!S&&Date.now()-k>5e3)throw new Error("体動の受信が中断されています");h=Date.now(),at(),m=null,tt=0,G=[],W=0,K=!1,$=[],Y=0,Q=0,et=-120,P=null,D=!0,O=0,T=[],R=0,B=0,F=null,H=h.toString(36)+"_"+Math.random().toString(36).slice(2,10),V=[],z.push({id:H,start:h,calibrationSeconds:A,marginDb:L,audioOnly:S}),ot(),s("calStatus").textContent="端末を寝るときの位置に置き、できるだけ静かにしてください。",v=!0,s("stop").disabled=!1,s("clear").disabled=!0,s("export").disabled=!0,s("update").disabled=!0,s("st").textContent="環境音を測定中：残り30秒",g.push(setInterval(Ut,1e3)),g.push(setInterval(it,3e4)),s("readyStatus").textContent="マイク：測定中 ／ 体動："+(S?"使用しない（音声のみ）":"測定中"),nt("測定開始");try{if(navigator.wakeLock){var e=await navigator.wakeLock.request("screen");v?(i=e,nt("画面ロック防止: OK"),e.addEventListener("release",(function(){i===e&&(i=null,nt("画面ロック防止: 解除されました"))}))):await e.release()}else nt("画面ロック防止: 非対応")}catch(t){nt("WakeLock失敗: "+t.message)}}catch(t){v=!1,bt(),xt(t.message+"。権限・入力を再確認してください。"),nt("開始できません: "+t.message)}finally{w=!1,s("back").disabled=v}}else nt("保存先が利用できません。ページを再読み込みして確認してください。")}function Ut(){if(v){t&&"suspended"===t.state&&t.resume().catch((function(t){nt("音声再開失敗: "+t.message)}));var e=I.n?I.dbSum/I.n:null,n=!S&&I.gn>0,a=n?I.gSum/I.gn:null,o=n?I.gMax:null;f.push([Date.now(),null===e?null:+e.toFixed(1),I.n?+I.dbMax.toFixed(1):null,null===a?null:+a.toFixed(4),null===o?null:+o.toFixed(4)]),p.push([e,o]),p.length>240&&p.shift(),D&&(s("st").textContent="環境音を測定中：残り"+Math.max(0,Math.ceil(A-O/t.sampleRate))+"秒"),s("db").textContent=I.n?et.toFixed(0):"未受信",s("g").textContent=S?"未使用":n?I.gMax.toFixed(3):"未受信",s("readyStatus").textContent="マイク："+(wt()&&t&&"running"===t.state?"測定中":"入力中断")+" ／ 体動："+(S?"使用しない（音声のみ）":n?"受信中":"未受信");var r=Math.floor((Date.now()-h)/1e3);s("clock").textContent=[r/3600|0,(r/60|0)%60,r%60].map((function(t){return String(t).padStart(2,"0")})).join(":"),at(),Et()}}function Et(){var t=s("cv"),e=t.getContext("2d"),n=t.width,a=t.height,o=n/240;e.clearRect(0,0,n,a),e.strokeStyle="#4c8dff",e.beginPath();var r=!1;p.forEach((function(t,n){if(null!==t[0]){var i=a-Math.max(0,Math.min(1,(t[0]+90)/90))*a;r?e.lineTo(n*o,i):e.moveTo(n*o,i),r=!0}else r=!1})),e.stroke(),e.strokeStyle="#f59e0b",e.beginPath();var i=!1;if(p.forEach((function(t,n){if(null!==t[1]){var r=a-Math.min(t[1]/.2,1)*a;i?e.lineTo(n*o,r):e.moveTo(n*o,r),i=!0}else i=!1})),e.stroke(),null!==P){e.strokeStyle="#ef4444",e.beginPath();var c=a-(P+90)/90*a;e.moveTo(0,c),e.lineTo(n,c),e.stroke()}}function Mt(){if(v){if(v=!1,gt(),g.forEach(clearInterval),g=[],bt(),x=!1,i){var t=i;i=null,t.release().catch((function(){}))}D=!1,T=[],z.length&&(z[z.length-1].end=Date.now(),ot()),it(),s("export").disabled=!1,s("update").disabled=!1,s("stop").disabled=!0,s("start").disabled=!0,s("back").disabled=!1,s("clear").disabled=!1,s("st").textContent="終了",s("readyStatus").textContent="測定終了。次の測定前に権限・入力を再確認してください。",s("back").textContent="次の測定へ（権限を再確認）",nt("終了。ログ"+f.length+"件")}}function _t(){if(f.length){var t="time,db_avg,db_max,motion_avg,motion_max\n"+f.map((function(t){return new Date(t[0]).toISOString()+","+t.slice(1).join(",")})).join("\n"),e=document.createElement("a"),n=URL.createObjectURL(new Blob([t],{type:"text/csv"}));e.href=n,e.download="sleep_"+(new Date).toISOString().slice(0,10)+".csv",document.body.appendChild(e),e.click(),e.remove(),setTimeout((function(){URL.revokeObjectURL(n)}),6e4)}else nt("記録なし")}function It(t,e){var n=URL.createObjectURL(t),a=document.createElement("a");a.href=n,a.download=e,document.body.appendChild(a),a.click(),a.remove(),setTimeout((function(){URL.revokeObjectURL(n)}),6e4)}function Pt(){return"time,db_avg,db_max,motion_avg,motion_max\n"+f.map((function(t){return new Date(t[0]).toISOString()+","+t.slice(1).join(",")})).join("\n")}function Dt(t){if(!Z){Z=new Uint32Array(256);for(var e=0;e<256;e++){for(var n=e,a=0;a<8;a++)n=1&n?3988292384^n>>>1:n>>>1;Z[e]=n>>>0}}for(var o=4294967295,r=0;r<t.length;r++)o=Z[255&(o^t[r])]^o>>>8;return(4294967295^o)>>>0}async function Ot(t){var e=[],n=[],a=0,o=0,r=new TextEncoder;if(t.length>65535)throw new Error("ZIPのファイル数上限を超えました");for(var i=0;i<t.length;i++){var c=t[i],l=r.encode(c.name),u=new Uint8Array(await c.blob.arrayBuffer()),d=Dt(u),f=u.length;if(a+f+l.length+30>4294967295)throw new Error("ZIPは4GB未満にしてください");var h=new Uint8Array(30+l.length),m=new DataView(h.buffer);m.setUint32(0,67324752,!0),m.setUint16(4,20,!0),m.setUint16(6,2048,!0),m.setUint16(12,33,!0),m.setUint32(14,d,!0),m.setUint32(18,f,!0),m.setUint32(22,f,!0),m.setUint16(26,l.length,!0),h.set(l,30);var g=new Uint8Array(46+l.length),p=new DataView(g.buffer);p.setUint32(0,33639248,!0),p.setUint16(4,20,!0),p.setUint16(6,20,!0),p.setUint16(8,2048,!0),p.setUint16(14,33,!0),p.setUint32(16,d,!0),p.setUint32(20,f,!0),p.setUint32(24,f,!0),p.setUint16(28,l.length,!0),p.setUint32(42,a,!0),g.set(l,46),e.push(h,c.blob),n.push(g),a+=h.length+f,o+=g.length,s("export").textContent="ZIP作成中 "+(i+1)+" / "+t.length,await new Promise((function(t){setTimeout(t,0)}))}if(a+o+22>4294967295)throw new Error("ZIPは4GB未満にしてください");var v=new Uint8Array(22),w=new DataView(v.buffer);return w.setUint32(0,101010256,!0),w.setUint16(8,t.length,!0),w.setUint16(10,t.length,!0),w.setUint32(12,o,!0),w.setUint32(16,a,!0),new Blob(e.concat(n,[v]),{type:"application/zip"})}async function Tt(){if(v||w||b||N||!M)nt("測定・確認を終了してから出力してください");else{N=!0,["export","clear","start","check","back","update"].forEach((function(t){s(t).disabled=!0}));try{await Promise.all(V);var t=await lt();if(t.sort((function(t,e){return(t.actualStart||t.start)-(e.actualStart||e.start)})),!f.length&&!t.length)return void nt("出力する記録がありません");var e=[{name:"log.csv",blob:new Blob(["\ufeff"+Pt()],{type:"text/csv;charset=utf-8"})}],n="file,start_time,end_time,duration_seconds,session_id,sample_start,sample_end,sample_rate\n",a='<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>音声付き睡眠ログ</title><style>body{max-width:700px;margin:auto;padding:16px;font:16px/1.6 sans-serif}audio{width:100%}article{border-bottom:1px solid #ccc;padding:12px 0}</style><h1>音声付き睡眠ログ</h1><p>ZIPをすべて展開し、このHTMLを開いてください。日時は端末のタイムゾーン表示です。音量による検知であり、いびきの分類や医療診断ではありません。</p><p><a href="log.csv">1秒ログ</a> ／ <a href="clips.csv">音声一覧</a></p>',o=[];t.forEach((function(t){var r=t.actualStart||t.start,i="audio/"+ht(r,t.id||t.start),s=r+1e3*t.dur;e.push({name:i,blob:t.blob}),n+=[i,new Date(r).toISOString(),new Date(s).toISOString(),t.dur,t.sessionId||"",null==t.sampleStart?"":t.sampleStart,null==t.sampleEnd?"":t.sampleEnd,t.sampleRate||c].join(",")+"\n",o.push({file:i,start:r,end:s,duration:t.dur,sessionId:t.sessionId||null,sampleStart:null==t.sampleStart?null:t.sampleStart,sampleEnd:null==t.sampleEnd?null:t.sampleEnd}),a+="<article><b>"+new Date(r).toLocaleString("ja-JP")+"</b> / "+t.dur.toFixed(1)+'秒<audio controls preload="none" src="'+i+'"></audio><a href="'+i+'" download>WAV保存</a></article>'})),a+="</html>",e.push({name:"clips.csv",blob:new Blob(["\ufeff"+n],{type:"text/csv;charset=utf-8"})},{name:"index.html",blob:new Blob([a],{type:"text/html;charset=utf-8"})},{name:"manifest.json",blob:new Blob([JSON.stringify({version:4,exportedAt:(new Date).toISOString(),logTimeFormat:"UTC ISO8601",audioFormat:"16000Hz mono 16bit PCM WAV",detection:"volume only; not snore classification",sessions:z,clips:o},null,2)],{type:"application/json"})}),It(await Ot(e),"sleep_audio_"+(new Date).toISOString().replace(/[:.]/g,"-")+".zip"),nt("音声付きログを出力：ログ"+f.length+"件 / 音声"+t.length+"本")}catch(t){nt("音声付きログ出力失敗: "+t.message+"。記録は残っています。")}finally{N=!1,["export","clear","check","back","update"].forEach((function(t){s(t).disabled=!1})),s("start").disabled=!x||!M,s("export").textContent="音声付きログをZIP出力"}}}s("check").onclick=yt,s("audioOnly").onclick=function(){St(!0)},s("start").onclick=kt,s("stop").onclick=Mt,s("csv").onclick=_t,s("export").onclick=Tt,s("back").onclick=function(){v||w||(bt(),xt(),s("back").textContent="権限を再確認する")},s("clear").onclick=function(){if(!v&&!N&&M){if(V.length)return nt("保存処理完了を確認しています。完了後もう一度消去してください。"),void Promise.all(V).then((function(){V=[],nt("保存完了。消去できます。")})).catch((function(t){nt("未保存の音声があります: "+t.message)}));if(confirm("ログとクリップをすべて消しますか？")){f=[],p=[],z=[],ot();try{localStorage.removeItem("st_rows")}catch(t){nt("ログ消去失敗: "+t.message)}ut().then(pt).catch((function(t){nt("クリップ消去失敗: "+t.message)})),Et()}}},st().then((function(){return M=!0,lt().then((function(t){return t.forEach((function(t){J=Math.max(J,t.start)})),x&&(s("start").disabled=!1),pt()}))})).catch((function(t){nt("IndexedDBエラー: "+t.message),s("permissionMessage").textContent="保存先を開けません。測定開始はできません。ブラウザの保存設定を確認してください。"})),document.addEventListener("visibilitychange",(function(){document.hidden&&v&&nt("画面が非表示になりました。記録が中断する可能性があります。")}));try{var At=JSON.parse(localStorage.getItem("st_update")||"null");At&&(s("repo").value=At.repo||"",s("branch").value=At.branch||"main",s("path").value=At.path||"睡眠記録_tracker_V4.html");var Lt=sessionStorage.getItem("st_applied_sha");Lt&&(s("updateStatus").textContent="適用済みコミット："+Lt)}catch(t){}s("update").onclick=async function(){if(v||w||b||N)s("updateStatus").textContent="測定・確認を終了してから更新してください。";else{var t=s("repo").value.trim(),e=s("branch").value.trim(),n=s("path").value.trim();if(/^[\w.-]+\/[\w.-]+$/.test(t)&&e&&n&&!(n.indexOf("..")>=0)){s("update").disabled=!0;var a=new AbortController,o=setTimeout((function(){a.abort()}),2e4);try{localStorage.setItem("st_update",JSON.stringify({repo:t,branch:e,path:n})),s("updateStatus").textContent="最新コミットを確認中…";var r=await fetch("https://api.github.com/repos/"+t+"/commits/"+encodeURIComponent(e)+"?v="+Date.now(),{cache:"no-store",signal:a.signal});if(!r.ok)throw new Error("コミット取得 HTTP "+r.status);var i=(await r.json()).sha;if(!/^[a-f0-9]{40}$/.test(i))throw new Error("不正なコミットSHA");if(sessionStorage.getItem("st_applied_sha")===i)return void(s("updateStatus").textContent="このコミットは適用済みです："+i);var c="https://raw.githubusercontent.com/"+t+"/"+i+"/"+n.split("/").map(encodeURIComponent).join("/")+"?v="+i,l=await fetch(c,{cache:"no-store",signal:a.signal});if(!l.ok)throw new Error("HTML取得 HTTP "+l.status);var u=await l.text();if(!/<!doctype html/i.test(u)||u.indexOf('id="permission"')<0)throw new Error("Tracker HTMLではありません");if(clearTimeout(o),s("updateStatus").textContent="取得済み："+i,!confirm("コミット "+i.slice(0,12)+" のコードに更新しますか？保存済みログは残ります。"))return;if(v||w||b||N)throw new Error("測定状態が変わりました。停止後に再試行してください");await Promise.all(V),it(),ot(),bt(),_.forEach((function(t){URL.revokeObjectURL(t)})),q&&q.close(),sessionStorage.setItem("st_applied_sha",i),document.open(),document.write(u),document.close()}catch(t){s("updateStatus").textContent="更新失敗："+t.message+"。現在のV4をそのまま利用できます。",nt("更新失敗: "+t.message)}finally{clearTimeout(o),s("update")&&(s("update").disabled=!1)}}else s("updateStatus").textContent="リポジトリ・ブランチ・HTMLパスを設定してください。"}};</script>
-</body></html>
-<!DOCTYPE html>
-<html lang="ja"><head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>ST Tracker V4</title>
-<style>
-body{margin:0 auto;max-width:520px;padding:16px;background:#0b1020;color:#e8ecf5;font:15px/1.5 -apple-system,sans-serif}
-.c{background:#161d33;border-radius:12px;padding:12px;margin-bottom:12px}
-.big{font-size:42px;font-weight:700;text-align:center}
-button{width:100%;padding:14px;margin-top:8px;border:0;border-radius:10px;font-size:16px;font-weight:700;color:#fff;background:#4c8dff}
-button:disabled{opacity:.4}.r{background:#ef4444}.s{background:#3a4466}
-canvas{width:100%;height:120px;background:#000;border-radius:8px}
-pre{margin:0;font-size:12px;color:#a8b2cc;white-space:pre-wrap}
-.clip{border-top:1px solid #2a3350;padding:8px 0;font-size:13px}
-.clip audio{width:100%;height:32px}.clip button{width:auto;padding:6px 12px;font-size:13px;margin:4px 0 0}
-[hidden]{display:none!important}
-h2{font-size:18px;margin:0 0 10px}.note{font-size:13px;color:#b8c4de}
-.status{padding:10px;background:#0b1020;border-radius:8px;overflow-wrap:anywhere}
-</style></head><body>
-<h1 style="font-size:18px">睡眠記録 Tracker V4</h1>
-<section id="permission" class="c">
-  <h2>測定に必要な権限について</h2>
-  <p>このアプリは、睡眠中の<strong>音（いびき・環境音など）</strong>と<strong>振動（寝返りなどによる端末の動き）</strong>を記録します。</p>
-  <p>測定のため、<strong>マイクとモーションセンサーへのアクセスを許可してください。</strong><br>下のボタンを押すと、必要に応じて端末の許可確認が表示されます。</p>
-  <p><strong>この段階では記録を保存しません。「測定開始」を押してから記録を始めます。</strong></p>
-  <p class="note">入力確認と開始待ちの間はマイクを使用しますが、音声・測定ログは保存しません。体動の確認が完了しない場合は、端末を少し動かして再試行してください。</p>
-  <div class="status" role="status" aria-live="polite">
-    <div>マイク：<b id="micStatus">未確認</b></div>
-    <div>モーション許可：<b id="motionPermission">未確認</b></div>
-    <div>体動の実受信：<b id="motionStatus">未確認</b></div>
-    <div id="permissionMessage">権限を確認してからスタート画面へ進みます。</div>
-  </div>
-  <button id="check">権限を確認して進む</button>
-  <button id="audioOnly" class="s" hidden>音声のみで進む</button>
-</section>
-<section id="tracker" hidden>
-<div class="c">
-  <div id="readyStatus" class="status" role="status" aria-live="polite"></div>
-  <p class="note">「測定開始」で記録を始めます。測定中は画面を表示したままにしてください。音量は相対値で、校正済みの音圧レベルではありません。</p>
-  <div class="big" id="clock">00:00:00</div>
-  <div>音量: <b id="db">--</b> dB　体動: <b id="g">--</b> G</div>
-  <div>状態: <b id="st">待機中</b>　クリップ: <b id="cnt2">0</b>本</div>
-  <canvas id="cv" width="480" height="120"></canvas>
-  <div id="calStatus" class="note">開始後、最初の30秒で環境音を測定します。端末を寝るときの位置に置き、できるだけ静かにしてください。</div>
-  <p class="note">音量で検知するため、いびき以外の音も記録されます。医療診断用ではありません。画面点灯・充電状態を基本とし、連続測定は保証されません。</p>
-</div>
-<div class="c">
-  <button id="start" disabled>測定開始</button>
-  <button id="stop" class="r" disabled>測定終了</button>
-  <button id="back" class="s">権限を再確認する</button>
-  <button id="export" class="s">音声付きログをZIP出力</button>
-  <button id="csv" class="s">1秒ログをCSV保存</button>
-  <button id="clear" class="s">すべて消去</button>
-</div>
-<div class="c"><b>録音クリップ</b> (新しい順・最大30本)<div id="list"></div></div>
-</section>
-<details class="c"><summary>GitHub更新設定</summary>
-  <p class="note">リポジトリ・ブランチ・V4の配置パスを指定してください。測定停止後に最新コミットの単一HTMLを取得して適用します。未設定では更新できません。</p>
-  <label>owner/repository <input id="repo" placeholder="owner/repository"></label><br>
-  <label>ブランチ <input id="branch" value="main"></label><br>
-  <label>HTMLパス <input id="path" value="睡眠記録_tracker_V4.html"></label>
-  <button id="update" class="s">最新コミットを確認・適用</button>
-  <div id="updateStatus" class="note" role="status">更新未確認（既存版を使用中）</div>
-</details>
-<div class="c"><pre id="log">待機中（記録は開始していません）</pre></div>
-<script>var t,e,n,a,o,r,i,s=function(t){return document.getElementById(t)},c=16e3,l=3*c,u=5*c,d=120*c,f=[],h=0,m=null,g=[],p=[],v=!1,w=!1,b=!1,x=!1,S=!1,y=!1,C=!1,k=0,U=!1,E=!1,M=!1,_=[],I={dbMax:-120,dbSum:0,n:0,gMax:0,gSum:0,gn:0},P=null,D=!1,O=0,T=[],A=30,L=6,R=0,j=0,B=0,F=null,H="",z=[],N=!1,V=[],J=0;try{z=JSON.parse(localStorage.getItem("st_sessions")||"[]"),Array.isArray(z)||(z=[])}catch(t){}var q,Z,G=[],W=0,K=!1,$=[],Y=0,Q=0,X=0,tt=0,et=-120;function nt(t){s("log").textContent=t+"\n"+s("log").textContent.split("\n").slice(0,12).join("\n")}function at(){I={dbMax:-120,dbSum:0,n:0,gMax:0,gSum:0,gn:0}}function ot(){try{localStorage.setItem("st_sessions",JSON.stringify(z))}catch(t){nt("測定情報保存失敗: "+t.message)}}try{var rt=JSON.parse(localStorage.getItem("st_rows")||"[]");Array.isArray(rt)&&(f=rt)}catch(t){}function it(){try{localStorage.setItem("st_rows",JSON.stringify(f))}catch(t){nt("ログ保存失敗:"+t.message)}}function st(){return new Promise((function(t,e){var n=indexedDB.open("st_tracker",1);n.onupgradeneeded=function(){n.result.createObjectStore("clips",{keyPath:"start"})},n.onsuccess=function(){q=n.result,t()},n.onerror=function(){e(n.error)}}))}function ct(t){return new Promise((function(e,n){var a=q.transaction("clips","readwrite");a.objectStore("clips").put(t),a.oncomplete=e,a.onerror=a.onabort=function(){n(a.error||new Error("保存中断"))}}))}function lt(){return new Promise((function(t,e){var n=q.transaction("clips").objectStore("clips").getAll();n.onsuccess=function(){t(n.result)},n.onerror=function(){e(n.error)}}))}function ut(){return new Promise((function(t,e){var n=q.transaction("clips","readwrite");n.objectStore("clips").clear(),n.oncomplete=t,n.onerror=n.onabort=function(){e(n.error||new Error("消去中断"))}}))}function dt(t){var e=t.length,n=new ArrayBuffer(44+2*e),a=new DataView(n);function o(t,e){for(var n=0;n<e.length;n++)a.setUint8(t+n,e.charCodeAt(n))}o(0,"RIFF"),a.setUint32(4,36+2*e,!0),o(8,"WAVEfmt "),a.setUint32(16,16,!0),a.setUint16(20,1,!0),a.setUint16(22,1,!0),a.setUint32(24,c,!0),a.setUint32(28,2*c,!0),a.setUint16(32,2,!0),a.setUint16(34,16,!0),o(36,"data"),a.setUint32(40,2*e,!0);for(var r=0;r<e;r++)a.setInt16(44+2*r,t[r],!0);return new Blob([n],{type:"audio/wav"})}function ft(t){var e=new Date(t),n=function(t){return String(t).padStart(2,"0")};return n(e.getHours())+":"+n(e.getMinutes())+":"+n(e.getSeconds())}function ht(t,e){var n=new Date(t),a=function(t){return String(t).padStart(2,"0")};return"snore_"+n.getFullYear()+a(n.getMonth()+1)+a(n.getDate())+"_"+a(n.getHours())+a(n.getMinutes())+a(n.getSeconds())+"_"+String(e||t).replace(/[^a-zA-Z0-9_-]/g,"_")+".wav"}function mt(e){if(v){var n,a=e.inputBuffer.getChannelData(0),o=0;for(n=0;n<a.length;n++)o+=a[n]*a[n];if(et=20*Math.log10(Math.sqrt(o/a.length)+1e-8),I.dbSum+=et,I.n++,et>I.dbMax&&(I.dbMax=et),D){if(T.push(et),(O+=a.length)>=A*t.sampleRate){var r=T.slice().sort((function(t,e){return t-e})),i=r.length>>1,f=r.length%2?r[i]:(r[i-1]+r[i])/2;P=f+L,D=!1,T=[],z[z.length-1].baseline=f,z[z.length-1].threshold=P,z[z.length-1].calibrationEnd=Date.now(),ot(),s("calStatus").textContent="環境音の測定完了。環境音より大きな音を自動で記録します。",s("st").textContent="測定中",nt("環境音 "+f.toFixed(1)+" dB / 自動しきい値 "+P.toFixed(1)+" dB")}}else{var h;null===F?h=a:((h=new Float32Array(a.length+1))[0]=F,h.set(a,1));for(var m=t.sampleRate/c,g=[];tt<h.length-1;){var p=Math.floor(tt),w=tt-p,x=h[p]*(1-w)+h[p+1]*w;x=Math.max(-1,Math.min(1,x)),g.push(x<0?32768*x:32767*x),tt+=m}tt-=h.length-1,F=h[h.length-1];var S=Int16Array.from(g);if(S.length){B||(B=Date.now()-S.length/c*1e3);for(var C=0;C<S.length;)if(K){et>P&&(Q=0);var k=Math.min(S.length-C,d-Y,et>P?d:u-Q);k>0&&($.push(S.subarray(C,C+k)),Y+=k,R+=k,C+=k,et<=P&&(Q+=k)),(Q>=u||Y>=d)&&gt()}else{var U=S.subarray(C);for(G.push(U),W+=U.length,R+=U.length,C=S.length;W>l;){var E=W-l;G[0].length<=E?W-=G.shift().length:(G[0]=G[0].subarray(E),W-=E)}et>P&&(K=!0,j=R-W,$=G,Y=W,G=[],W=0,Q=0,X=B+j/c*1e3,s("st").textContent="いびき記録中")}}}}else b&&(y=!0)}function gt(){if(K){K=!1,s("st").textContent=v?"測定中":"終了";var t=new Int16Array(Y),e=0;$.forEach((function(n){t.set(n,e),e+=n.length}));var n=X,a=Math.max(Math.round(n),J+1);J=a;var o={start:a,actualStart:n,dur:Y/c,blob:dt(t),id:H+"_"+j,sessionId:H,sampleStart:j,sampleEnd:j+Y,sampleRate:c};$=[],Y=0,G=[],W=0,Q=0;var r=ct(o).then((function(){return nt("保存 "+ft(n)+" "+o.dur.toFixed(1)+"秒"),pt()})).catch((function(t){throw nt("クリップ保存失敗: "+t.message),t}));V.push(r),r.catch((function(){}))}}function pt(){return lt().then((function(t){t.sort((function(t,e){return(e.actualStart||e.start)-(t.actualStart||t.start)})),s("cnt2").textContent=t.length;var e=s("list");e.innerHTML="",_.forEach((function(t){URL.revokeObjectURL(t)})),_=[],t.slice(0,30).forEach((function(t){var n=URL.createObjectURL(t.blob);_.push(n);var a=document.createElement("div");a.className="clip",a.innerHTML=ft(t.actualStart||t.start)+" / "+t.dur.toFixed(1)+"秒 / "+Math.round(t.blob.size/1024)+'KB<br><audio controls preload="none" src="'+n+'"></audio><br>';var o=document.createElement("button");o.className="s",o.textContent="保存",o.onclick=function(){var e=document.createElement("a");e.href=n,e.download=ht(t.actualStart||t.start,t.id||t.start),document.body.appendChild(e),e.click(),e.remove()},a.appendChild(o),e.appendChild(a)}))})).catch((function(t){nt("クリップ一覧取得失敗: "+t.message)}))}function vt(t,e){return new Promise((function(n){var a=Date.now()+e;!function e(){return t()?n(!0):Date.now()>=a?n(!1):void setTimeout(e,100)}()}))}function wt(){return!(!r||!r.getAudioTracks().some((function(t){return"live"===t.readyState&&!t.muted})))}function bt(){if(E&&(window.removeEventListener("devicemotion",Ct),E=!1),n){n.onaudioprocess=null;try{n.disconnect()}catch(t){}n=null}if(a){try{a.disconnect()}catch(t){}a=null}if(o){try{o.disconnect()}catch(t){}o=null}if(r&&(r.getTracks().forEach((function(t){t.onended=null,t.stop()})),r=null),t){var i=t;t=null,i.close().catch((function(){}))}e=null,m=null}function xt(t){x=!1,s("permission").hidden=!1,s("tracker").hidden=!0,s("audioOnly").hidden=!0,s("start").disabled=!0,s("check").disabled=!1,s("check").textContent="権限を確認して進む",s("micStatus").textContent="未確認",s("motionPermission").textContent="未確認",s("motionStatus").textContent="未確認",s("permissionMessage").textContent=t||"権限を確認してからスタート画面へ進みます。"}function St(e){if(!wt()||!t||"running"!==t.state)return bt(),void xt("マイク入力が中断されました。再確認してください。");S=e,x=!0,s("permission").hidden=!0,s("tracker").hidden=!1,s("readyStatus").textContent="マイク：入力確認済み ／ 体動："+(e?"使用しない（音声のみ）":"実受信確認済み"),s("start").disabled=!M,s("g").textContent=e?"未使用":"--",s("st").textContent="開始待ち（記録なし）",nt(e?"音声のみの測定を選択（まだ記録していません）":"権限・入力確認完了（まだ記録していません）")}async function yt(){if(!(b||v||w||N)){bt(),x=!1,b=!0,y=!1,C=!1,k=0,U=!1,s("check").disabled=!0,s("audioOnly").hidden=!0,s("micStatus").textContent="確認中",s("motionPermission").textContent="確認中",s("motionStatus").textContent="受信待ち",s("permissionMessage").textContent="端末の許可確認に回答してください。";try{if(!window.isSecureContext)throw new Error("HTTPSで開いてください（localhostを除く）");if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw new Error("この環境はマイク取得に対応していません");var i;if(window.DeviceMotionEvent&&"function"==typeof DeviceMotionEvent.requestPermission)try{i=Promise.resolve(DeviceMotionEvent.requestPermission()).then((function(t){return{value:t}}),(function(t){return{error:t}}))}catch(t){i=Promise.resolve({error:t})}else i=Promise.resolve({value:window.DeviceMotionEvent?"not-required":"unsupported"});var c=window.AudioContext||window.webkitAudioContext;if(!c)throw new Error("Web Audioに対応していません");var l=(t=new c).resume().then((function(){return null}),(function(t){return t}));window.addEventListener("devicemotion",Ct),E=!0,(r=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:!1,noiseSuppression:!1,autoGainControl:!1}})).getAudioTracks().forEach((function(t){t.onended=function(){v?(Mt(),nt("マイク入力が終了したため測定を停止しました。")):b||(bt(),xt("マイク入力が終了しました。再確認してください。"))}}));var u=await l;if(u)throw u;if("running"!==t.state)throw new Error("音声処理が停止しています。再試行してください");a=t.createMediaStreamSource(r),e=t.createAnalyser(),a.connect(e),(n=t.createScriptProcessor(4096,1,1)).onaudioprocess=mt,(o=t.createGain()).gain.value=0,a.connect(n),n.connect(o),o.connect(t.destination);var d=await i;d.error?s("motionPermission").textContent="要求エラー: "+d.error.message:"granted"===d.value?(s("motionPermission").textContent="許可済み",U=!0):"not-required"===d.value?(s("motionPermission").textContent="明示的な許可要求なし",U=!0):s("motionPermission").textContent="unsupported"===d.value?"非対応":"許可されていません",nt("モーション許可: "+s("motionPermission").textContent),s("permissionMessage").textContent="入力を確認中です。必要に応じて端末を少し動かしてください。";var f=await Promise.all([vt((function(){return y&&wt()}),3e3),U?vt((function(){return C}),4e3):Promise.resolve(!1)]);if(!f[0]||!wt())throw new Error("音声入力を確認できません。端末設定とマイク権限を確認して再試行してください");s("micStatus").textContent="入力確認済み（"+t.sampleRate+"Hz / "+t.state+"）",nt("マイクOK "+t.sampleRate+"Hz / "+t.state+"（保存なし）"),f[1]?(s("motionStatus").textContent="実受信確認済み",St(!1)):(s("motionStatus").textContent=U?"値を確認できません（待機時間4秒）":"利用できません",s("permissionMessage").textContent="体動は確認できませんでした。音声のみで進むか、権限・端末設定を確認して再試行してください。",s("audioOnly").hidden=!1,nt("体動の実受信なし。ユーザーの選択待ち"))}catch(t){bt(),s("micStatus").textContent="確認失敗: "+t.message,"受信待ち"===s("motionStatus").textContent&&(s("motionStatus").textContent="未確認"),s("permissionMessage").textContent="測定は開始していません。端末の権限設定を確認して再試行してください。",nt("権限・入力確認失敗: "+t.message)}finally{b=!1,s("check").disabled=!1,s("check").textContent="権限を再確認する"}}}function Ct(t){var e=t.accelerationIncludingGravity;if(e&&[e.x,e.y,e.z].every((function(t){return"number"==typeof t&&isFinite(t)}))&&(C=!0,k=Date.now(),v&&!S)){var n=Math.sqrt(e.x*e.x+e.y*e.y+e.z*e.z)/9.80665;if(null!==m){var a=Math.abs(n-m);I.gSum+=a,I.gn++,a>I.gMax&&(I.gMax=a)}m=n}}async function kt(){if(!(v||w||N)&&x)if(M){if(!wt()||!t)return bt(),void xt("マイク入力が中断されました。再確認してください。");w=!0,s("start").disabled=!0,s("back").disabled=!0;try{if(await t.resume(),"running"!==t.state||!wt())throw new Error("マイク入力を開始できません");if(!S&&Date.now()-k>5e3)throw new Error("体動の受信が中断されています");h=Date.now(),at(),m=null,tt=0,G=[],W=0,K=!1,$=[],Y=0,Q=0,et=-120,P=null,D=!0,O=0,T=[],R=0,B=0,F=null,H=h.toString(36)+"_"+Math.random().toString(36).slice(2,10),V=[],z.push({id:H,start:h,calibrationSeconds:A,marginDb:L,audioOnly:S}),ot(),s("calStatus").textContent="端末を寝るときの位置に置き、できるだけ静かにしてください。",v=!0,s("stop").disabled=!1,s("clear").disabled=!0,s("export").disabled=!0,s("update").disabled=!0,s("st").textContent="環境音を測定中：残り30秒",g.push(setInterval(Ut,1e3)),g.push(setInterval(it,3e4)),s("readyStatus").textContent="マイク：測定中 ／ 体動："+(S?"使用しない（音声のみ）":"測定中"),nt("測定開始");try{if(navigator.wakeLock){var e=await navigator.wakeLock.request("screen");v?(i=e,nt("画面ロック防止: OK"),e.addEventListener("release",(function(){i===e&&(i=null,nt("画面ロック防止: 解除されました"))}))):await e.release()}else nt("画面ロック防止: 非対応")}catch(t){nt("WakeLock失敗: "+t.message)}}catch(t){v=!1,bt(),xt(t.message+"。権限・入力を再確認してください。"),nt("開始できません: "+t.message)}finally{w=!1,s("back").disabled=v}}else nt("保存先が利用できません。ページを再読み込みして確認してください。")}function Ut(){if(v){t&&"suspended"===t.state&&t.resume().catch((function(t){nt("音声再開失敗: "+t.message)}));var e=I.n?I.dbSum/I.n:null,n=!S&&I.gn>0,a=n?I.gSum/I.gn:null,o=n?I.gMax:null;f.push([Date.now(),null===e?null:+e.toFixed(1),I.n?+I.dbMax.toFixed(1):null,null===a?null:+a.toFixed(4),null===o?null:+o.toFixed(4)]),p.push([e,o]),p.length>240&&p.shift(),D&&(s("st").textContent="環境音を測定中：残り"+Math.max(0,Math.ceil(A-O/t.sampleRate))+"秒"),s("db").textContent=I.n?et.toFixed(0):"未受信",s("g").textContent=S?"未使用":n?I.gMax.toFixed(3):"未受信",s("readyStatus").textContent="マイク："+(wt()&&t&&"running"===t.state?"測定中":"入力中断")+" ／ 体動："+(S?"使用しない（音声のみ）":n?"受信中":"未受信");var r=Math.floor((Date.now()-h)/1e3);s("clock").textContent=[r/3600|0,(r/60|0)%60,r%60].map((function(t){return String(t).padStart(2,"0")})).join(":"),at(),Et()}}function Et(){var t=s("cv"),e=t.getContext("2d"),n=t.width,a=t.height,o=n/240;e.clearRect(0,0,n,a),e.strokeStyle="#4c8dff",e.beginPath();var r=!1;p.forEach((function(t,n){if(null!==t[0]){var i=a-Math.max(0,Math.min(1,(t[0]+90)/90))*a;r?e.lineTo(n*o,i):e.moveTo(n*o,i),r=!0}else r=!1})),e.stroke(),e.strokeStyle="#f59e0b",e.beginPath();var i=!1;if(p.forEach((function(t,n){if(null!==t[1]){var r=a-Math.min(t[1]/.2,1)*a;i?e.lineTo(n*o,r):e.moveTo(n*o,r),i=!0}else i=!1})),e.stroke(),null!==P){e.strokeStyle="#ef4444",e.beginPath();var c=a-(P+90)/90*a;e.moveTo(0,c),e.lineTo(n,c),e.stroke()}}function Mt(){if(v){if(v=!1,gt(),g.forEach(clearInterval),g=[],bt(),x=!1,i){var t=i;i=null,t.release().catch((function(){}))}D=!1,T=[],z.length&&(z[z.length-1].end=Date.now(),ot()),it(),s("export").disabled=!1,s("update").disabled=!1,s("stop").disabled=!0,s("start").disabled=!0,s("back").disabled=!1,s("clear").disabled=!1,s("st").textContent="終了",s("readyStatus").textContent="測定終了。次の測定前に権限・入力を再確認してください。",s("back").textContent="次の測定へ（権限を再確認）",nt("終了。ログ"+f.length+"件")}}function _t(){if(f.length){var t="time,db_avg,db_max,motion_avg,motion_max\n"+f.map((function(t){return new Date(t[0]).toISOString()+","+t.slice(1).join(",")})).join("\n"),e=document.createElement("a"),n=URL.createObjectURL(new Blob([t],{type:"text/csv"}));e.href=n,e.download="sleep_"+(new Date).toISOString().slice(0,10)+".csv",document.body.appendChild(e),e.click(),e.remove(),setTimeout((function(){URL.revokeObjectURL(n)}),6e4)}else nt("記録なし")}function It(t,e){var n=URL.createObjectURL(t),a=document.createElement("a");a.href=n,a.download=e,document.body.appendChild(a),a.click(),a.remove(),setTimeout((function(){URL.revokeObjectURL(n)}),6e4)}function Pt(){return"time,db_avg,db_max,motion_avg,motion_max\n"+f.map((function(t){return new Date(t[0]).toISOString()+","+t.slice(1).join(",")})).join("\n")}function Dt(t){if(!Z){Z=new Uint32Array(256);for(var e=0;e<256;e++){for(var n=e,a=0;a<8;a++)n=1&n?3988292384^n>>>1:n>>>1;Z[e]=n>>>0}}for(var o=4294967295,r=0;r<t.length;r++)o=Z[255&(o^t[r])]^o>>>8;return(4294967295^o)>>>0}async function Ot(t){var e=[],n=[],a=0,o=0,r=new TextEncoder;if(t.length>65535)throw new Error("ZIPのファイル数上限を超えました");for(var i=0;i<t.length;i++){var c=t[i],l=r.encode(c.name),u=new Uint8Array(await c.blob.arrayBuffer()),d=Dt(u),f=u.length;if(a+f+l.length+30>4294967295)throw new Error("ZIPは4GB未満にしてください");var h=new Uint8Array(30+l.length),m=new DataView(h.buffer);m.setUint32(0,67324752,!0),m.setUint16(4,20,!0),m.setUint16(6,2048,!0),m.setUint16(12,33,!0),m.setUint32(14,d,!0),m.setUint32(18,f,!0),m.setUint32(22,f,!0),m.setUint16(26,l.length,!0),h.set(l,30);var g=new Uint8Array(46+l.length),p=new DataView(g.buffer);p.setUint32(0,33639248,!0),p.setUint16(4,20,!0),p.setUint16(6,20,!0),p.setUint16(8,2048,!0),p.setUint16(14,33,!0),p.setUint32(16,d,!0),p.setUint32(20,f,!0),p.setUint32(24,f,!0),p.setUint16(28,l.length,!0),p.setUint32(42,a,!0),g.set(l,46),e.push(h,c.blob),n.push(g),a+=h.length+f,o+=g.length,s("export").textContent="ZIP作成中 "+(i+1)+" / "+t.length,await new Promise((function(t){setTimeout(t,0)}))}if(a+o+22>4294967295)throw new Error("ZIPは4GB未満にしてください");var v=new Uint8Array(22),w=new DataView(v.buffer);return w.setUint32(0,101010256,!0),w.setUint16(8,t.length,!0),w.setUint16(10,t.length,!0),w.setUint32(12,o,!0),w.setUint32(16,a,!0),new Blob(e.concat(n,[v]),{type:"application/zip"})}async function Tt(){if(v||w||b||N||!M)nt("測定・確認を終了してから出力してください");else{N=!0,["export","clear","start","check","back","update"].forEach((function(t){s(t).disabled=!0}));try{await Promise.all(V);var t=await lt();if(t.sort((function(t,e){return(t.actualStart||t.start)-(e.actualStart||e.start)})),!f.length&&!t.length)return void nt("出力する記録がありません");var e=[{name:"log.csv",blob:new Blob(["\ufeff"+Pt()],{type:"text/csv;charset=utf-8"})}],n="file,start_time,end_time,duration_seconds,session_id,sample_start,sample_end,sample_rate\n",a='<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>音声付き睡眠ログ</title><style>body{max-width:700px;margin:auto;padding:16px;font:16px/1.6 sans-serif}audio{width:100%}article{border-bottom:1px solid #ccc;padding:12px 0}</style><h1>音声付き睡眠ログ</h1><p>ZIPをすべて展開し、このHTMLを開いてください。日時は端末のタイムゾーン表示です。音量による検知であり、いびきの分類や医療診断ではありません。</p><p><a href="log.csv">1秒ログ</a> ／ <a href="clips.csv">音声一覧</a></p>',o=[];t.forEach((function(t){var r=t.actualStart||t.start,i="audio/"+ht(r,t.id||t.start),s=r+1e3*t.dur;e.push({name:i,blob:t.blob}),n+=[i,new Date(r).toISOString(),new Date(s).toISOString(),t.dur,t.sessionId||"",null==t.sampleStart?"":t.sampleStart,null==t.sampleEnd?"":t.sampleEnd,t.sampleRate||c].join(",")+"\n",o.push({file:i,start:r,end:s,duration:t.dur,sessionId:t.sessionId||null,sampleStart:null==t.sampleStart?null:t.sampleStart,sampleEnd:null==t.sampleEnd?null:t.sampleEnd}),a+="<article><b>"+new Date(r).toLocaleString("ja-JP")+"</b> / "+t.dur.toFixed(1)+'秒<audio controls preload="none" src="'+i+'"></audio><a href="'+i+'" download>WAV保存</a></article>'})),a+="</html>",e.push({name:"clips.csv",blob:new Blob(["\ufeff"+n],{type:"text/csv;charset=utf-8"})},{name:"index.html",blob:new Blob([a],{type:"text/html;charset=utf-8"})},{name:"manifest.json",blob:new Blob([JSON.stringify({version:4,exportedAt:(new Date).toISOString(),logTimeFormat:"UTC ISO8601",audioFormat:"16000Hz mono 16bit PCM WAV",detection:"volume only; not snore classification",sessions:z,clips:o},null,2)],{type:"application/json"})}),It(await Ot(e),"sleep_audio_"+(new Date).toISOString().replace(/[:.]/g,"-")+".zip"),nt("音声付きログを出力：ログ"+f.length+"件 / 音声"+t.length+"本")}catch(t){nt("音声付きログ出力失敗: "+t.message+"。記録は残っています。")}finally{N=!1,["export","clear","check","back","update"].forEach((function(t){s(t).disabled=!1})),s("start").disabled=!x||!M,s("export").textContent="音声付きログをZIP出力"}}}s("check").onclick=yt,s("audioOnly").onclick=function(){St(!0)},s("start").onclick=kt,s("stop").onclick=Mt,s("csv").onclick=_t,s("export").onclick=Tt,s("back").onclick=function(){v||w||(bt(),xt(),s("back").textContent="権限を再確認する")},s("clear").onclick=function(){if(!v&&!N&&M){if(V.length)return nt("保存処理完了を確認しています。完了後もう一度消去してください。"),void Promise.all(V).then((function(){V=[],nt("保存完了。消去できます。")})).catch((function(t){nt("未保存の音声があります: "+t.message)}));if(confirm("ログとクリップをすべて消しますか？")){f=[],p=[],z=[],ot();try{localStorage.removeItem("st_rows")}catch(t){nt("ログ消去失敗: "+t.message)}ut().then(pt).catch((function(t){nt("クリップ消去失敗: "+t.message)})),Et()}}},st().then((function(){return M=!0,lt().then((function(t){return t.forEach((function(t){J=Math.max(J,t.start)})),x&&(s("start").disabled=!1),pt()}))})).catch((function(t){nt("IndexedDBエラー: "+t.message),s("permissionMessage").textContent="保存先を開けません。測定開始はできません。ブラウザの保存設定を確認してください。"})),document.addEventListener("visibilitychange",(function(){document.hidden&&v&&nt("画面が非表示になりました。記録が中断する可能性があります。")}));try{var At=JSON.parse(localStorage.getItem("st_update")||"null");At&&(s("repo").value=At.repo||"",s("branch").value=At.branch||"main",s("path").value=At.path||"睡眠記録_tracker_V4.html");var Lt=sessionStorage.getItem("st_applied_sha");Lt&&(s("updateStatus").textContent="適用済みコミット："+Lt)}catch(t){}s("update").onclick=async function(){if(v||w||b||N)s("updateStatus").textContent="測定・確認を終了してから更新してください。";else{var t=s("repo").value.trim(),e=s("branch").value.trim(),n=s("path").value.trim();if(/^[\w.-]+\/[\w.-]+$/.test(t)&&e&&n&&!(n.indexOf("..")>=0)){s("update").disabled=!0;var a=new AbortController,o=setTimeout((function(){a.abort()}),2e4);try{localStorage.setItem("st_update",JSON.stringify({repo:t,branch:e,path:n})),s("updateStatus").textContent="最新コミットを確認中…";var r=await fetch("https://api.github.com/repos/"+t+"/commits/"+encodeURIComponent(e)+"?v="+Date.now(),{cache:"no-store",signal:a.signal});if(!r.ok)throw new Error("コミット取得 HTTP "+r.status);var i=(await r.json()).sha;if(!/^[a-f0-9]{40}$/.test(i))throw new Error("不正なコミットSHA");if(sessionStorage.getItem("st_applied_sha")===i)return void(s("updateStatus").textContent="このコミットは適用済みです："+i);var c="https://raw.githubusercontent.com/"+t+"/"+i+"/"+n.split("/").map(encodeURIComponent).join("/")+"?v="+i,l=await fetch(c,{cache:"no-store",signal:a.signal});if(!l.ok)throw new Error("HTML取得 HTTP "+l.status);var u=await l.text();if(!/<!doctype html/i.test(u)||u.indexOf('id="permission"')<0)throw new Error("Tracker HTMLではありません");if(clearTimeout(o),s("updateStatus").textContent="取得済み："+i,!confirm("コミット "+i.slice(0,12)+" のコードに更新しますか？保存済みログは残ります。"))return;if(v||w||b||N)throw new Error("測定状態が変わりました。停止後に再試行してください");await Promise.all(V),it(),ot(),bt(),_.forEach((function(t){URL.revokeObjectURL(t)})),q&&q.close(),sessionStorage.setItem("st_applied_sha",i),document.open(),document.write(u),document.close()}catch(t){s("updateStatus").textContent="更新失敗："+t.message+"。現在のV4をそのまま利用できます。",nt("更新失敗: "+t.message)}finally{clearTimeout(o),s("update")&&(s("update").disabled=!1)}}else s("updateStatus").textContent="リポジトリ・ブランチ・HTMLパスを設定してください。"}};</script>
-</body></html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>音声記録確認</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, sans-serif; margin: 0;
+      background: #f3f5f8; color: #182231;
+    }
+    main { max-width: 640px; margin: auto; padding: 24px 18px; }
+    h1 { font-size: 23px; margin-bottom: 8px; }
+    p { line-height: 1.7; }
+    .card {
+      background: white; border-radius: 16px; padding: 20px;
+      margin: 16px 0; border: 1px solid #e0e5ec;
+    }
+    button, .download {
+      padding: 13px 20px; border-radius: 10px; border: none;
+      font-size: 16px; cursor: pointer;
+    }
+    button { background: #235bce; color: white; }
+    button:disabled { opacity: .5; cursor: default; }
+    #stop { background: #bc3544; }
+    .buttons { display: flex; gap: 12px; margin: 16px 0; }
+    #status { font-weight: bold; min-height: 26px; }
+    .meter { height: 14px; background: #e8edf5; border-radius: 8px; overflow: hidden; }
+    #level { height: 100%; width: 0; background: #329767; }
+    input[type=range] { width: 100%; margin: 18px 0 8px; }
+    label { display: block; margin-top: 18px; }
+    .small { font-size: 13px; color: #5b6575; }
+    .clip { border-top: 1px solid #e0e5ec; padding: 16px 0; }
+    .clip:first-child { border-top: 0; }
+    audio { width: 100%; margin: 12px 0; }
+    .download {
+      display: inline-block; background: #edf2fc; color: #235bce;
+      text-decoration: none; font-size: 14px; padding: 9px 12px;
+      margin-right: 8px; margin-top: 6px;
+    }
+    #error { color: #a52a36; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>音声・発生時刻 記録確認</h1>
+  <p>音がした区間を録音し、開始時刻と録音時間を表示します。</p>
+
+  <section class="card">
+    <div id="status" role="status">停止中</div>
+    <div class="buttons">
+      <button id="start">開始</button>
+      <button id="stop" disabled>停止</button>
+    </div>
+    <div class="meter"><div id="level"></div></div>
+    <label for="threshold">録音を始める音量：<span id="thresholdValue">0.025</span></label>
+    <input id="threshold" type="range" min="0.005" max="0.100" step="0.005" value="0.025">
+    <div class="small">小さくすると、小さい音でも録音します。音が収まって約0.6秒後に録音を終了します。</div>
+    <p id="error" role="alert"></p>
+  </section>
+
+  <section class="card">
+    <h2 style="font-size:18px">保存された録音 <span id="count">0</span>件</h2>
+    <div id="empty" class="small">開始して、声などの音を出してください。</div>
+    <div id="clips"></div>
+  </section>
+
+  <p class="small">
+    確認中は画面を開いたままにしてください。録音はサーバーへ送信しません。
+    この画面を閉じると録音は消えるため、残したい音声は「音声を保存」で保存してください。
+    時刻は録音開始操作の時刻で、厳密な音声サンプル時刻ではありません。
+  </p>
+</main>
+
+<script>
+  const $ = id => document.getElementById(id);
+  let stream, context, analyser, samples, recorder;
+  let active = false, timer = null, count = 0;
+  let quietSince = null;
+  let wakeLock = null;
+
+  $('threshold').oninput = () => {
+    $('thresholdValue').textContent = Number($('threshold').value).toFixed(3);
+  };
+
+  function addDownload(parent, blob, name, text) {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = name;
+    link.className = 'download';
+    link.textContent = text;
+    parent.appendChild(link);
+  }
+
+  function beginClip() {
+    const formats = [
+      'audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'
+    ];
+    const mime = formats.find(type => MediaRecorder.isTypeSupported(type));
+    const current = mime
+      ? new MediaRecorder(stream, { mimeType: mime })
+      : new MediaRecorder(stream);
+    const chunks = [];
+    const startDate = new Date();
+    const startClock = performance.now();
+    let endClock = startClock;
+
+    current.ondataavailable = event => {
+      if (event.data.size) chunks.push(event.data);
+    };
+
+    current.onstop = () => {
+      if (recorder === current) recorder = null;
+      quietSince = null;
+      if (active) $('status').textContent = '音声監視中';
+
+      if (!chunks.length) return;
+      const type = current.mimeType || chunks[0].type;
+      const blob = new Blob(chunks, { type });
+      const extension = type.includes('mp4') ? 'm4a'
+        : type.includes('ogg') ? 'ogg' : 'webm';
+      const duration = Math.max(0, (endClock - startClock) / 1000);
+      const name = 'audio_' + startDate.getTime();
+      const section = document.createElement('div');
+      section.className = 'clip';
+
+      const heading = document.createElement('strong');
+      heading.textContent = startDate.toLocaleString('ja-JP', { hour12: false })
+        + '.' + String(startDate.getMilliseconds()).padStart(3, '0');
+      section.appendChild(heading);
+
+      const detail = document.createElement('div');
+      detail.className = 'small';
+      detail.textContent = '録音時間：' + duration.toFixed(2) + '秒';
+      section.appendChild(detail);
+
+      const audio = document.createElement('audio');
+      audio.controls = true;
+      audio.src = URL.createObjectURL(blob);
+      section.appendChild(audio);
+
+      const metadata = {
+        start_epoch_ms: startDate.getTime(),
+        start_iso: startDate.toISOString(),
+        duration_seconds: duration,
+        duration_basis: 'browser_monotonic_clock',
+        timestamp_basis: 'recorder_start_request',
+        audio: name + '.' + extension,
+        mime_type: type
+      };
+      addDownload(section, blob, metadata.audio, '音声を保存');
+      addDownload(section,
+        new Blob([JSON.stringify(metadata, null, 2)],
+          { type: 'application/json' }),
+        name + '.json', '時刻情報を保存');
+
+      $('clips').prepend(section);
+      $('empty').hidden = true;
+      $('count').textContent = ++count;
+    };
+
+    current.onerror = () => {
+      $('error').textContent = '録音エラーが発生しました。停止して再度お試しください。';
+      endMonitoring();
+    };
+
+    current.finish = () => {
+      if (current.state === 'recording') {
+        endClock = performance.now();
+        current.stop();
+      }
+    };
+
+    current.start();
+    recorder = current;
+    quietSince = null;
+    $('status').textContent = '録音中';
+  }
+
+  function inspect() {
+    if (!active) return;
+    try {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const sample of samples) sum += sample * sample;
+      const rms = Math.sqrt(sum / samples.length);
+      $('level').style.width = Math.min(100, rms * 1000) + '%';
+      const loud = rms >= Number($('threshold').value);
+      const now = performance.now();
+
+      if (loud) {
+        quietSince = null;
+        if (!recorder) beginClip();
+      } else if (recorder && recorder.state === 'recording') {
+        if (quietSince === null) quietSince = now;
+        if (now - quietSince >= 600) recorder.finish();
+      }
+    } catch (error) {
+      $('error').textContent = '音声取得エラー：' + error.message;
+      endMonitoring();
+    }
+  }
+
+  async function endMonitoring() {
+    if (!active) return;
+    active = false;
+    clearInterval(timer);
+    $('stop').disabled = true;
+    $('status').textContent = '保存中';
+
+    const current = recorder;
+    if (current) {
+      await new Promise(resolve => {
+        current.addEventListener('stop', resolve, { once: true });
+        if (current.state === 'recording') current.finish();
+      });
+    }
+    stream?.getTracks().forEach(track => track.stop());
+    await context?.close().catch(() => {});
+    if (wakeLock) await wakeLock.release().catch(() => {});
+    wakeLock = null;
+    $('level').style.width = '0';
+    $('status').textContent = '停止中';
+    $('start').disabled = false;
+  }
+
+  $('start').onclick = async () => {
+    $('error').textContent = '';
+    $('start').disabled = true;
+    $('status').textContent = 'マイクを準備中';
+    try {
+      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
+        throw new Error('この表示環境ではマイク録音を利用できません。HTTPSのページをSafariまたはChromeで開く必要があります。');
+      }
+      stream = await navigator.mediaDevices.getUserMedia({ audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      } });
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      context = new AudioContextClass();
+      await context.resume();
+      analyser = context.createAnalyser();
+      analyser.fftSize = 2048;
+      samples = new Float32Array(analyser.fftSize);
+      context.createMediaStreamSource(stream).connect(analyser);
+      active = true;
+      $('stop').disabled = false;
+      $('status').textContent = '音声監視中';
+      timer = setInterval(inspect, 40);
+      if (navigator.wakeLock) {
+        navigator.wakeLock.request('screen').then(lock => {
+          if (active) wakeLock = lock;
+          else lock.release().catch(() => {});
+        }).catch(() => {});
+      }
+    } catch (error) {
+      stream?.getTracks().forEach(track => track.stop());
+      await context?.close().catch(() => {});
+      $('status').textContent = '開始できませんでした';
+      $('error').textContent = error.message;
+      $('start').disabled = false;
+    }
+  };
+
+  $('stop').onclick = endMonitoring;
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden && active) endMonitoring();
+  });
+</script>
+</body>
+</html>
