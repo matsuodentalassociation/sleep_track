@@ -1,273 +1,208 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>音声記録確認</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      font-family: system-ui, sans-serif; margin: 0;
-      background: #f3f5f8; color: #182231;
-    }
-    main { max-width: 640px; margin: auto; padding: 24px 18px; }
-    h1 { font-size: 23px; margin-bottom: 8px; }
-    p { line-height: 1.7; }
-    .card {
-      background: white; border-radius: 16px; padding: 20px;
-      margin: 16px 0; border: 1px solid #e0e5ec;
-    }
-    button, .download {
-      padding: 13px 20px; border-radius: 10px; border: none;
-      font-size: 16px; cursor: pointer;
-    }
-    button { background: #235bce; color: white; }
-    button:disabled { opacity: .5; cursor: default; }
-    #stop { background: #bc3544; }
-    .buttons { display: flex; gap: 12px; margin: 16px 0; }
-    #status { font-weight: bold; min-height: 26px; }
-    .meter { height: 14px; background: #e8edf5; border-radius: 8px; overflow: hidden; }
-    #level { height: 100%; width: 0; background: #329767; }
-    input[type=range] { width: 100%; margin: 18px 0 8px; }
-    label { display: block; margin-top: 18px; }
-    .small { font-size: 13px; color: #5b6575; }
-    .clip { border-top: 1px solid #e0e5ec; padding: 16px 0; }
-    .clip:first-child { border-top: 0; }
-    audio { width: 100%; margin: 12px 0; }
-    .download {
-      display: inline-block; background: #edf2fc; color: #235bce;
-      text-decoration: none; font-size: 14px; padding: 9px 12px;
-      margin-right: 8px; margin-top: 6px;
-    }
-    #error { color: #a52a36; white-space: pre-wrap; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>音声・体動 ZIP出力テスト v03</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f5f8;color:#182231;font-family:system-ui,sans-serif}main{max-width:720px;margin:auto;padding:20px 16px}h1{font-size:23px}h2{font-size:18px}.card{background:white;border:1px solid #dde3eb;border-radius:14px;padding:18px;margin:16px 0}.row{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}button,a.save{border:0;border-radius:9px;padding:12px 15px;background:#235bce;color:white;font-size:15px;cursor:pointer;text-decoration:none;display:inline-block}button:disabled{opacity:.45;cursor:default}#stop{background:#b83444}.small{font-size:13px;color:#526071;line-height:1.7;overflow-wrap:anywhere}.meter{height:16px;background:#e8edf5;border-radius:8px;overflow:hidden}#level{height:100%;width:0;background:#329767}label{display:block;margin:12px 0 6px}input[type=text]{width:100%;padding:10px;border:1px solid #c9d1dc;border-radius:7px}input[type=range]{width:100%}canvas{display:block;width:100%;height:100px;background:#f7f9fc;border-radius:8px}audio{width:100%;margin:10px 0}.clip{border-top:1px solid #dde3eb;padding:14px 0}#error{color:#a52a36;white-space:pre-wrap}.save{margin-right:8px}summary{cursor:pointer;font-weight:bold}#status{font-weight:bold}
+</style>
 </head>
 <body>
 <main>
-  <h1>音声・発生時刻 記録確認</h1>
-  <p>音がした区間を録音し、開始時刻と録音時間を表示します。</p>
-
-  <section class="card">
-    <div id="status" role="status">停止中</div>
-    <div class="buttons">
-      <button id="start">開始</button>
-      <button id="stop" disabled>停止</button>
-    </div>
-    <div class="meter"><div id="level"></div></div>
-    <label for="threshold">録音を始める音量：<span id="thresholdValue">0.025</span></label>
-    <input id="threshold" type="range" min="0.005" max="0.100" step="0.005" value="0.025">
-    <div class="small">小さくすると、小さい音でも録音します。音が収まって約0.6秒後に録音を終了します。</div>
-    <p id="error" role="alert"></p>
-  </section>
-
-  <section class="card">
-    <h2 style="font-size:18px">保存された録音 <span id="count">0</span>件</h2>
-    <div id="empty" class="small">開始して、声などの音を出してください。</div>
-    <div id="clips"></div>
-  </section>
-
-  <p class="small">
-    確認中は画面を開いたままにしてください。録音はサーバーへ送信しません。
-    この画面を閉じると録音は消えるため、残したい音声は「音声を保存」で保存してください。
-    時刻は録音開始操作の時刻で、厳密な音声サンプル時刻ではありません。
-  </p>
+<h1>音声・体動 ZIP出力テスト <small>v03</small></h1>
+<p class="small">短時間テスト用。音声と体動を共通時間軸で保存します。診断・睡眠判定は行いません。</p>
+<section class="card">
+<div id="status" role="status">停止中</div>
+<div class="row"><button id="start">開始</button><button id="stop" disabled>停止</button></div>
+<h2>音声入力</h2><div class="meter"><div id="level"></div></div>
+<p id="audioState" class="small">音声処理：未開始</p>
+<label for="threshold">録音開始音量：<span id="thresholdValue">0.025</span></label>
+<input id="threshold" type="range" min="0.005" max="0.100" step="0.005" value="0.025">
+<p class="small">音が収まって約0.6秒後に終了。直前音声バッファは未実装です。音声は端末が対応するMP4またはWebMなどで保存します。</p>
+<h2>モーションセンサー</h2><canvas id="motionPlot" width="640" height="100"></canvas>
+<p id="motionState" class="small">未開始。スマホ自体の動きを記録します。</p>
+<p id="error" role="alert"></p>
+</section>
+<section class="card">
+<h2>記録と出力</h2><p id="counts" class="small">録音：0件 ／ センサー：0件</p>
+<div class="row"><button id="zip" disabled>音声＋ログのZIPを作る</button><button id="csv" disabled>CSVのみ保存</button></div>
+<p id="exportState" class="small" role="status">停止後、ZIPを作成してください。</p><div id="zipLinks"></div>
+<p class="small">ZIP作成後に表示される「ZIPを保存」を押してください。CSVとJSONには音声ファイルの相対パスが入ります。音声バイナリはZIP内のaudioフォルダーに入ります。</p>
+<div id="clips"></div>
+</section>
+<section class="card"><details><summary>GitHubから最新版を取得</summary>
+<p class="small">自身が管理・信頼する公開リポジトリを指定してください。取得したHTMLはこのページで実行されます。非公開リポジトリは非対応です。</p>
+<label for="repo">リポジトリ（所有者/名前）</label><input id="repo" type="text" placeholder="owner/repository" autocomplete="off">
+<label for="branch">ブランチ</label><input id="branch" type="text" value="main" autocomplete="off">
+<label for="path">HTMLファイルの場所</label><input id="path" type="text" value="audio-time-web-check_v03.html" autocomplete="off">
+<label><input id="autoUpdate" type="checkbox" checked> 次回起動時も最新版を確認・適用</label>
+<div class="row"><button id="update">設定を保存して最新版を適用</button><button id="forget">更新設定を解除</button></div>
+<p id="updateState" class="small">取得先は未設定です。</p>
+</details></section>
+<p class="small">ページを閉じると未保存の記録は消えます。音声・体動はサーバーへ送信しません。更新確認時だけGitHubへ通信します。HTTPSまたはlocalhostとマイク・センサーの権限が必要です。画面非表示時は記録を停止します。</p>
 </main>
-
 <script>
-  const $ = id => document.getElementById(id);
-  let stream, context, analyser, samples, recorder;
-  let active = false, timer = null, count = 0;
-  let quietSince = null;
-  let wakeLock = null;
-
-  $('threshold').oninput = () => {
-    $('thresholdValue').textContent = Number($('threshold').value).toFixed(3);
-  };
-
-  function addDownload(parent, blob, name, text) {
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = name;
-    link.className = 'download';
-    link.textContent = text;
-    parent.appendChild(link);
-  }
-
-  function beginClip() {
-    const formats = [
-      'audio/webm;codecs=opus', 'audio/mp4', 'audio/webm'
-    ];
-    const mime = formats.find(type => MediaRecorder.isTypeSupported(type));
-    const current = mime
-      ? new MediaRecorder(stream, { mimeType: mime })
-      : new MediaRecorder(stream);
-    const chunks = [];
-    const startDate = new Date();
-    const startClock = performance.now();
-    let endClock = startClock;
-
-    current.ondataavailable = event => {
-      if (event.data.size) chunks.push(event.data);
-    };
-
-    current.onstop = () => {
-      if (recorder === current) recorder = null;
-      quietSince = null;
-      if (active) $('status').textContent = '音声監視中';
-
-      if (!chunks.length) return;
-      const type = current.mimeType || chunks[0].type;
-      const blob = new Blob(chunks, { type });
-      const extension = type.includes('mp4') ? 'm4a'
-        : type.includes('ogg') ? 'ogg' : 'webm';
-      const duration = Math.max(0, (endClock - startClock) / 1000);
-      const name = 'audio_' + startDate.getTime();
-      const section = document.createElement('div');
-      section.className = 'clip';
-
-      const heading = document.createElement('strong');
-      heading.textContent = startDate.toLocaleString('ja-JP', { hour12: false })
-        + '.' + String(startDate.getMilliseconds()).padStart(3, '0');
-      section.appendChild(heading);
-
-      const detail = document.createElement('div');
-      detail.className = 'small';
-      detail.textContent = '録音時間：' + duration.toFixed(2) + '秒';
-      section.appendChild(detail);
-
-      const audio = document.createElement('audio');
-      audio.controls = true;
-      audio.src = URL.createObjectURL(blob);
-      section.appendChild(audio);
-
-      const metadata = {
-        start_epoch_ms: startDate.getTime(),
-        start_iso: startDate.toISOString(),
-        duration_seconds: duration,
-        duration_basis: 'browser_monotonic_clock',
-        timestamp_basis: 'recorder_start_request',
-        audio: name + '.' + extension,
-        mime_type: type
-      };
-      addDownload(section, blob, metadata.audio, '音声を保存');
-      addDownload(section,
-        new Blob([JSON.stringify(metadata, null, 2)],
-          { type: 'application/json' }),
-        name + '.json', '時刻情報を保存');
-
-      $('clips').prepend(section);
-      $('empty').hidden = true;
-      $('count').textContent = ++count;
-    };
-
-    current.onerror = () => {
-      $('error').textContent = '録音エラーが発生しました。停止して再度お試しください。';
-      endMonitoring();
-    };
-
-    current.finish = () => {
-      if (current.state === 'recording') {
-        endClock = performance.now();
-        current.stop();
-      }
-    };
-
-    current.start();
-    recorder = current;
-    quietSince = null;
-    $('status').textContent = '録音中';
-  }
-
-  function inspect() {
-    if (!active) return;
-    try {
-      analyser.getFloatTimeDomainData(samples);
-      let sum = 0;
-      for (const sample of samples) sum += sample * sample;
-      const rms = Math.sqrt(sum / samples.length);
-      $('level').style.width = Math.min(100, rms * 1000) + '%';
-      const loud = rms >= Number($('threshold').value);
-      const now = performance.now();
-
-      if (loud) {
-        quietSince = null;
-        if (!recorder) beginClip();
-      } else if (recorder && recorder.state === 'recording') {
-        if (quietSince === null) quietSince = now;
-        if (now - quietSince >= 600) recorder.finish();
-      }
-    } catch (error) {
-      $('error').textContent = '音声取得エラー：' + error.message;
-      endMonitoring();
-    }
-  }
-
-  async function endMonitoring() {
-    if (!active) return;
-    active = false;
-    clearInterval(timer);
-    $('stop').disabled = true;
-    $('status').textContent = '保存中';
-
-    const current = recorder;
-    if (current) {
-      await new Promise(resolve => {
-        current.addEventListener('stop', resolve, { once: true });
-        if (current.state === 'recording') current.finish();
-      });
-    }
-    stream?.getTracks().forEach(track => track.stop());
-    await context?.close().catch(() => {});
-    if (wakeLock) await wakeLock.release().catch(() => {});
-    wakeLock = null;
-    $('level').style.width = '0';
-    $('status').textContent = '停止中';
-    $('start').disabled = false;
-  }
-
-  $('start').onclick = async () => {
-    $('error').textContent = '';
-    $('start').disabled = true;
-    $('status').textContent = 'マイクを準備中';
-    try {
-      if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) {
-        throw new Error('この表示環境ではマイク録音を利用できません。HTTPSのページをSafariまたはChromeで開く必要があります。');
-      }
-      stream = await navigator.mediaDevices.getUserMedia({ audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false
-      } });
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      context = new AudioContextClass();
-      await context.resume();
-      analyser = context.createAnalyser();
-      analyser.fftSize = 2048;
-      samples = new Float32Array(analyser.fftSize);
-      context.createMediaStreamSource(stream).connect(analyser);
-      active = true;
-      $('stop').disabled = false;
-      $('status').textContent = '音声監視中';
-      timer = setInterval(inspect, 40);
-      if (navigator.wakeLock) {
-        navigator.wakeLock.request('screen').then(lock => {
-          if (active) wakeLock = lock;
-          else lock.release().catch(() => {});
-        }).catch(() => {});
-      }
-    } catch (error) {
-      stream?.getTracks().forEach(track => track.stop());
-      await context?.close().catch(() => {});
-      $('status').textContent = '開始できませんでした';
-      $('error').textContent = error.message;
-      $('start').disabled = false;
-    }
-  };
-
-  $('stop').onclick = endMonitoring;
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden && active) endMonitoring();
-  });
+'use strict';
+const VERSION='03',CONFIG_KEY='sleepRecorder.github.v2';
+const $=id=>document.getElementById(id),rows=[],clips=[],sessions=[],points=[];
+const columns=['session','event','epoch_ms','iso_utc','elapsed_ms','duration_seconds','audio_file','mime_type','accel_x','accel_y','accel_z','gravity_x','gravity_y','gravity_z','rotation_alpha','rotation_beta','rotation_gamma','sensor_interval_ms','note'];
+let stream=null,ctx=null,analyser=null,samples=null,source=null,silent=null;
+let active=false,starting=false,stopping=false,packing=false,updating=false;
+let timer=null,recorder=null,pending=null,quietSince=null,motionWatch=null;
+let originClock=0,originEpoch=0,session='',currentSession=null,lastMotion=-Infinity;
+let motionCount=0,motionThisSession=0,audioFrames=0,lastAudioLevel=0;
+const finite=x=>typeof x==='number'&&Number.isFinite(x)?x:'';
+const fixed=x=>Number(x.toFixed(3));
+function buttons(){
+ $('start').disabled=active||starting||stopping||packing||updating;
+ $('stop').disabled=!active||stopping;
+ $('zip').disabled=!rows.length||active||starting||stopping||packing||updating;
+ $('csv').disabled=!rows.length||active||starting||stopping||packing||updating;
+ $('update').disabled=active||starting||stopping||packing||updating;
+ $('forget').disabled=updating;
+}
+function addRow(event,data={},clock=performance.now()){
+ const elapsed=fixed(clock-originClock),epoch=Math.round(originEpoch+elapsed);
+ rows.push({session,event,epoch_ms:epoch,iso_utc:new Date(epoch).toISOString(),elapsed_ms:elapsed,...data});buttons();
+}
+function counts(){ $('counts').textContent=`録音：${clips.length}件 ／ センサー：${motionCount}件`; }
+function link(parent,blob,name,text){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.textContent=text;a.className='save';parent.appendChild(a);return a;}
+function sortedRows(){return [...rows].sort((a,b)=>a.epoch_ms-b.epoch_ms);}
+function csvBlob(){const quote=v=>'"'+String(v??'').replace(/"/g,'""')+'"';return new Blob(['\uFEFF'+[columns.join(','),...sortedRows().map(r=>columns.map(k=>quote(r[k])).join(','))].join('\r\n')],{type:'text/csv;charset=utf-8'});}
+$('threshold').oninput=()=>{$('thresholdValue').textContent=Number($('threshold').value).toFixed(3);};
+function beginClip(){
+ const type=['audio/mp4','audio/webm;codecs=opus','audio/webm'].find(t=>MediaRecorder.isTypeSupported(t));
+ const r=type?new MediaRecorder(stream,{mimeType:type}):new MediaRecorder(stream);
+ const chunks=[],begin=performance.now(),epoch=Math.round(originEpoch+begin-originClock),clipSession=session;
+ let end=begin,resolve;const done=new Promise(ok=>resolve=ok);
+ r.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
+ r.onstop=()=>{
+  try{
+   if(chunks.length){
+    const blob=new Blob(chunks,{type:r.mimeType||chunks[0].type});
+    const ext=blob.type.includes('mp4')?'m4a':blob.type.includes('ogg')?'ogg':blob.type.includes('wav')?'wav':'webm';
+    const name=`audio_${epoch}_${clips.length+1}.${ext}`,duration=fixed((end-begin)/1000);
+    const meta={session:clipSession,file:'audio/'+name,start_epoch_ms:epoch,start_iso_utc:new Date(epoch).toISOString(),start_elapsed_ms:fixed(begin-originClock),duration_seconds:duration,byte_size:blob.size,mime_type:blob.type,timestamp_basis:'recorder_start_request',duration_basis:'browser_monotonic_clock_operation_interval'};
+    clips.push({blob,name,meta});addRow('audio_clip',{duration_seconds:duration,audio_file:meta.file,mime_type:blob.type,note:'録音開始要求時刻。durationは録音操作区間で、音声ファイルの実再生時間とは異なる場合があります。'},begin);
+    const box=document.createElement('div');box.className='clip';const title=document.createElement('div');title.textContent=`${new Date(epoch).toLocaleString('ja-JP',{hour12:false})}.${String(epoch%1000).padStart(3,'0')} ／ ${duration.toFixed(2)}秒`;box.appendChild(title);
+    const audio=document.createElement('audio');audio.controls=true;audio.preload='metadata';audio.src=URL.createObjectURL(blob);box.appendChild(audio);link(box,blob,name,'音声のみ保存');$('clips').prepend(box);counts();
+   }else addRow('audio_error',{note:'録音データが空でした。'},begin);
+  }catch(e){$('error').textContent='保存エラー：'+e.message;}
+  finally{if(recorder===r)recorder=null;if(pending===done)pending=null;quietSince=null;if(active)$('status').textContent='音声監視中';resolve();}
+ };
+ r.finish=()=>{if(r.state==='recording'){end=performance.now();r.stop();}};
+ r.onerror=()=>{$('error').textContent='録音エラー';addRow('audio_error',{note:'MediaRecorderエラー'});stop();};
+ r.start();recorder=r;pending=done;quietSince=null;$('status').textContent='録音中';
+}
+function inspect(){
+ if(!active)return;
+ try{
+  analyser.getFloatTimeDomainData(samples);let sum=0;for(const x of samples)sum+=x*x;
+  const rms=Math.sqrt(sum/samples.length);lastAudioLevel=rms;audioFrames++;
+  $('level').style.width=Math.min(100,rms*1500)+'%';$('audioState').textContent=`音声処理：${ctx.state} ／ 入力音量：${rms.toFixed(5)} ／ マイク：${stream.getAudioTracks()[0]?.readyState||'なし'}`;
+  if(ctx.state!=='running')return;const now=performance.now();
+  if(rms>=Number($('threshold').value)){quietSince=null;if(!recorder)beginClip();}
+  else if(recorder?.state==='recording'){if(quietSince===null)quietSince=now;if(now-quietSince>=600)recorder.finish();}
+ }catch(e){$('error').textContent='音声取得エラー：'+e.message;addRow('audio_error',{note:e.message});stop();}
+}
+function draw(){const c=$('motionPlot'),g=c.getContext('2d');g.clearRect(0,0,c.width,c.height);g.strokeStyle='#d3dbe7';g.beginPath();g.moveTo(0,80);g.lineTo(c.width,80);g.stroke();g.strokeStyle='#235bce';g.beginPath();points.forEach((v,i)=>{const x=i/299*c.width,y=80-Math.min(30,v)*2.3;if(i===0)g.moveTo(x,y);else g.lineTo(x,y);});g.stroke();}
+function onMotion(e){
+ if(!active)return;const now=performance.now();if(now-lastMotion<50)return;
+ const a=e.acceleration||{},g=e.accelerationIncludingGravity||{},r=e.rotationRate||{};
+ if(![a.x,a.y,a.z,g.x,g.y,g.z,r.alpha,r.beta,r.gamma].some(v=>finite(v)!==''))return;
+ lastMotion=now;motionCount++;motionThisSession++;
+ addRow('motion',{accel_x:finite(a.x),accel_y:finite(a.y),accel_z:finite(a.z),gravity_x:finite(g.x),gravity_y:finite(g.y),gravity_z:finite(g.z),rotation_alpha:finite(r.alpha),rotation_beta:finite(r.beta),rotation_gamma:finite(r.gamma),sensor_interval_ms:finite(e.interval)},now);
+ const free=[a.x,a.y,a.z].every(v=>finite(v)!==''),base=free?a:g,mag=Math.hypot(Number(base.x)||0,Number(base.y)||0,Number(base.z)||0);
+ points.push(mag);if(points.length>300)points.shift();draw();counts();$('motionState').textContent=`取得中：${motionThisSession}件 ／ ${free?'重力除外':'重力込み'}加速度：${mag.toFixed(3)} m/s²（保存上限：約20Hz）`;
+}
+async function release(){stream?.getTracks().forEach(t=>t.stop());stream=null;if(ctx&&ctx.state!=='closed')await ctx.close().catch(()=>{});ctx=null;}
+async function stop(){
+ if(!active||stopping)return;stopping=true;active=false;clearInterval(timer);clearTimeout(motionWatch);window.removeEventListener('devicemotion',onMotion);buttons();$('status').textContent='保存中';
+ try{const done=pending;recorder?.finish();if(done)await done;const clock=performance.now();addRow('session_end',{note:`センサー${motionThisSession}件、音量確認${audioFrames}回。最後の入力音量${lastAudioLevel.toFixed(5)}`},clock);Object.assign(currentSession,{end_elapsed_ms:fixed(clock-originClock),motion_count:motionThisSession,audio_checks:audioFrames});}
+ finally{await release();$('level').style.width='0';$('status').textContent='停止中';stopping=false;buttons();$('exportState').textContent='記録を停止しました。「音声＋ログのZIPを作る」を押してください。';}
+}
+$('start').onclick=async()=>{
+ if(active||starting||stopping||packing||updating)return;starting=true;buttons();$('error').textContent='';$('status').textContent='権限を確認中';
+ originClock=performance.now();originEpoch=Date.now();session='session_'+originEpoch;lastMotion=-Infinity;motionThisSession=0;audioFrames=0;points.length=0;draw();
+ currentSession={id:session,origin_epoch_ms:originEpoch,origin_iso_utc:new Date(originEpoch).toISOString(),user_agent:navigator.userAgent};sessions.push(currentSession);
+ try{
+  if(!navigator.mediaDevices?.getUserMedia||!window.MediaRecorder)throw new Error('録音非対応、またはHTTPS・表示環境の権限が不足しています。');
+  const AudioCtx=window.AudioContext||window.webkitAudioContext;if(!AudioCtx)throw new Error('Web Audio非対応');ctx=new AudioCtx();const resumed=ctx.resume().then(()=>null,e=>e);
+  let motionPermission;try{motionPermission=typeof DeviceMotionEvent==='undefined'?Promise.resolve('unsupported'):typeof DeviceMotionEvent.requestPermission==='function'?DeviceMotionEvent.requestPermission().catch(e=>'error: '+e.message):Promise.resolve('not-required');}catch(e){motionPermission=Promise.resolve('error: '+e.message);}
+  // iPhone向け：権限要求とAudioContext起動はクリック処理中に行う。
+  const micPromise=navigator.mediaDevices.getUserMedia({audio:true});stream=await micPromise;const resumeError=await resumed;if(resumeError)throw resumeError;const permission=await motionPermission;
+  source=ctx.createMediaStreamSource(stream);analyser=ctx.createAnalyser();analyser.fftSize=2048;samples=new Float32Array(analyser.fftSize);silent=ctx.createGain();silent.gain.value=0;source.connect(analyser);analyser.connect(silent);silent.connect(ctx.destination);await ctx.resume();
+  active=true;currentSession.recording_start_elapsed_ms=fixed(performance.now()-originClock);currentSession.motion_permission=permission;addRow('session_start',{note:'v'+VERSION+' / '+navigator.userAgent});addRow('motion_permission',{note:permission});
+  if(permission==='granted'||permission==='not-required'){
+   window.addEventListener('devicemotion',onMotion);$('motionState').textContent='許可済み・入力待ち。スマホを軽く動かしてください。';motionWatch=setTimeout(()=>{if(active&&!motionThisSession){$('motionState').textContent='センサー入力なし。端末・ブラウザー・埋め込み制限を確認してください。';addRow('motion_unavailable',{note:'開始から5秒間、有効なデータなし'});}},5000);
+  }else $('motionState').textContent='センサー取得不可：'+permission+'（音声のみ記録）';
+  $('status').textContent='音声監視中';timer=setInterval(inspect,40);inspect();stream.getAudioTracks()[0].addEventListener('ended',()=>{if(active){$('error').textContent='マイク入力終了';addRow('audio_error',{note:'マイク入力終了'});stop();}});
+ }catch(e){active=false;clearInterval(timer);clearTimeout(motionWatch);window.removeEventListener('devicemotion',onMotion);await release();addRow('start_error',{note:e.message});currentSession.error=e.message;$('status').textContent='開始できませんでした';$('error').textContent=e.message;}
+ finally{starting=false;buttons();}
+};
+$('stop').onclick=stop;
+$('csv').onclick=()=>{const a=link(document.body,csvBlob(),'sleep_log_'+Date.now()+'.csv','CSV');a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),60000);};
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&active){addRow('visibility_stop',{note:'画面非表示で停止'});stop();}});
+// 外部ライブラリ不要のZIP（無圧縮／UTF-8ファイル名／CRC32）。短時間テスト向け。
+const crcTable=Uint32Array.from({length:256},(_,n)=>{let c=n;for(let k=0;k<8;k++)c=(c&1)?0xedb88320^(c>>>1):c>>>1;return c>>>0;});
+function crc32(bytes){let c=0xffffffff;for(const b of bytes)c=crcTable[(c^b)&255]^(c>>>8);return (c^0xffffffff)>>>0;}
+async function makeZip(files){
+ if(files.length>65535)throw new Error('ZIPのファイル数上限を超えています');
+ const enc=new TextEncoder(),parts=[],central=[];let offset=0,centralSize=0;
+ const d=new Date(),year=Math.max(1980,Math.min(2107,d.getFullYear())),date=((year-1980)<<9)|((d.getMonth()+1)<<5)|d.getDate(),time=(d.getHours()<<11)|(d.getMinutes()<<5)|(d.getSeconds()>>1);
+ for(let i=0;i<files.length;i++){
+  $('exportState').textContent=`ZIP作成中：${i+1}/${files.length}ファイル`;await new Promise(ok=>setTimeout(ok,0));
+  const f=files[i],name=enc.encode(f.name),data=new Uint8Array(await f.blob.arrayBuffer());
+  if(name.length>65535||data.length>=0xffffffff||offset+30+name.length+data.length>=0xffffffff)throw new Error('このテスト版のZIP容量上限を超えています');
+  const crc=crc32(data),local=new Uint8Array(30+name.length),v=new DataView(local.buffer);
+  v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint16(6,0x0800,true);v.setUint16(8,0,true);v.setUint16(10,time,true);v.setUint16(12,date,true);v.setUint32(14,crc,true);v.setUint32(18,data.length,true);v.setUint32(22,data.length,true);v.setUint16(26,name.length,true);local.set(name,30);parts.push(local,data);
+  const header=new Uint8Array(46+name.length),c=new DataView(header.buffer);c.setUint32(0,0x02014b50,true);c.setUint16(4,20,true);c.setUint16(6,20,true);c.setUint16(8,0x0800,true);c.setUint16(10,0,true);c.setUint16(12,time,true);c.setUint16(14,date,true);c.setUint32(16,crc,true);c.setUint32(20,data.length,true);c.setUint32(24,data.length,true);c.setUint16(28,name.length,true);c.setUint32(42,offset,true);header.set(name,46);central.push(header);centralSize+=header.length;offset+=local.length+data.length;
+ }
+ if(offset+centralSize+22>=0xffffffff)throw new Error('ZIP容量上限');
+ const end=new Uint8Array(22),e=new DataView(end.buffer);e.setUint32(0,0x06054b50,true);e.setUint16(8,files.length,true);e.setUint16(10,files.length,true);e.setUint32(12,centralSize,true);e.setUint32(16,offset,true);
+ return new Blob([...parts,...central,end],{type:'application/zip'});
+}
+$('zip').onclick=async()=>{
+ if(active||starting||stopping||packing||updating||!rows.length)return;packing=true;buttons();
+ try{
+  const root='sleep_record_'+Date.now(),audio=clips.map(c=>({...c.meta}));
+  const manifest={schema_version:1,app_version:VERSION,created_iso_utc:new Date().toISOString(),sessions,audio,log_file:'log.csv',units:{elapsed_ms:'ms from each session origin',accel:'m/s^2, excluding gravity',gravity:'m/s^2, INCLUDING gravity (legacy CSV column name)',rotation:'degrees/second, NOT angles',sensor_interval_ms:'browser reported interval; saved events are throttled separately'},timing:{epoch:'session origin Date.now + performance.now delta',audio_start:'recorder start request, not sample-exact',audio_duration:'monotonic clock operation interval, not decoded audio duration',motion:'event handler time, not hardware timestamp'},motion_save_limit_hz:20,pre_roll_seconds:0,log_row_count:rows.length,motion_row_count:motionCount,audio_file_count:clips.length,audio_total_bytes:clips.reduce((n,c)=>n+c.blob.size,0)};
+  const readme='音声・体動ログ v03\n\nlog.csv：全イベント。sessionごとにelapsed_msを解釈してください。\nmanifest.json：セッション原点と各音声の配置情報。\naudio/：録音した音声ファイル。CSVのaudio_fileとJSONのfileはこのフォルダーを基準にした相対パスです。\n\ngravity_* は重力込み加速度。rotation_* は角速度（度/秒）で角度ではありません。\n音声時刻・時間は録音操作基準で、サンプル精度の同期は保証しません。無録音の空白区間を無音・無呼吸とは判定できません。\n本ZIPは無圧縮です。診断・睡眠判定は行いません。\n';
+  const files=[{name:root+'/log.csv',blob:csvBlob()},{name:root+'/manifest.json',blob:new Blob([JSON.stringify(manifest,null,2)],{type:'application/json'})},{name:root+'/README.txt',blob:new Blob([readme],{type:'text/plain;charset=utf-8'})},...clips.map(c=>({name:root+'/'+c.meta.file,blob:c.blob}))];
+  const blob=await makeZip(files);$('zipLinks').querySelectorAll('a').forEach(a=>URL.revokeObjectURL(a.href));$('zipLinks').replaceChildren();link($('zipLinks'),blob,root+'.zip','ZIPを保存');$('exportState').textContent=`ZIP作成完了：音声${clips.length}件、体動${motionCount}件、${(blob.size/1024/1024).toFixed(2)}MB。「ZIPを保存」を押してください。`;
+ }catch(e){$('exportState').textContent='ZIP作成失敗：'+e.message;}
+ finally{packing=false;buttons();}
+};
+// GitHub更新：キャッシュ回避＋ブランチ最新コミットSHAから取得する。
+function loadConfig(){try{return JSON.parse(localStorage.getItem(CONFIG_KEY)||'null');}catch{return null;}}
+function valid(c){return c&&/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(c.repo)&&c.branch&&c.path&&!c.path.split('/').includes('..');}
+function bust(url){return url+(url.includes('?')?'&':'?')+'_cb='+Date.now()+'_'+Math.random().toString(36).slice(2);}
+async function fresh(url,json=false){const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),15000);try{const r=await fetch(bust(url),{cache:'no-store',credentials:'omit',signal:controller.signal});if(!r.ok)throw new Error('GitHub HTTP '+r.status);return json?await r.json():await r.text();}finally{clearTimeout(timeout);}}
+async function update(c,automatic=false){
+ if(active||starting||stopping||packing||updating)return;if(!valid(c)){$('updateState').textContent='取得先の入力を確認してください';return;}
+ if(automatic&&rows.length)return;if(!automatic&&rows.length&&!confirm('更新すると未保存の記録が消えます。ZIPなどで保存済みですか？'))return;
+ updating=true;buttons();$('updateState').textContent='最新コミットを確認中…';
+ try{
+  const commit=await fresh('https://api.github.com/repos/'+c.repo+'/commits/'+encodeURIComponent(c.branch),true),sha=commit.sha;if(!/^[a-f0-9]{40}$/i.test(sha||''))throw new Error('不正なコミットSHA');
+  const key=[c.repo,c.branch,c.path,sha].join('|');
+  // タブ履歴ではなく、現在実行中の文書に埋め込んだ印で判定する。
+  if(document.querySelector('meta[name="sleep-applied-commit"]')?.content===key){$('updateState').textContent='最新版適用済み：'+sha.slice(0,12);return;}
+  const path=c.path.split('/').map(encodeURIComponent).join('/'),base='https://raw.githubusercontent.com/'+c.repo+'/'+sha+'/'+path.slice(0,path.lastIndexOf('/')+1);
+  const html=await fresh('https://raw.githubusercontent.com/'+c.repo+'/'+sha+'/'+path);if(!/<html[\s>]/i.test(html)||!/<\/html\s*>/i.test(html))throw new Error('取得先がHTMLではありません');
+  const parsed=new DOMParser().parseFromString(html,'text/html');parsed.querySelectorAll('base,meta[name="sleep-applied-commit"]').forEach(el=>el.remove());
+  parsed.querySelectorAll('script[src],link[rel="stylesheet"][href],img[src]').forEach(el=>{const attr=el.tagName==='LINK'?'href':'src',value=el.getAttribute(attr);if(value&&!/^(data:|blob:)/i.test(value)){const url=new URL(value,base);if(/^https?:$/.test(url.protocol))el.setAttribute(attr,bust(url.href));}});
+  const baseEl=parsed.createElement('base');baseEl.href=base;parsed.head.prepend(baseEl);const mark=parsed.createElement('meta');mark.name='sleep-applied-commit';mark.content=key;parsed.head.appendChild(mark);
+  document.open();document.write('<!DOCTYPE html>\n'+parsed.documentElement.outerHTML);document.close();
+ }catch(e){if($('updateState'))$('updateState').textContent='更新失敗。現在の版を維持：'+e.message;}
+ finally{updating=false;if($('start'))buttons();}
+}
+$('update').onclick=()=>{const c={repo:$('repo').value.trim(),branch:$('branch').value.trim(),path:$('path').value.trim().replace(/^\/+/,''),auto:$('autoUpdate').checked};if(!valid(c)){$('updateState').textContent='入力を確認してください';return;}if(!confirm('指定したGitHubのHTMLを実行します。ご自身が管理・信頼する取得先ですか？'))return;try{localStorage.setItem(CONFIG_KEY,JSON.stringify(c));}catch(e){$('updateState').textContent='設定保存失敗：'+e.message;return;}update(c);};
+$('forget').onclick=()=>{try{localStorage.removeItem(CONFIG_KEY);}catch{}$('updateState').textContent='更新設定を解除しました';};
+const config=loadConfig();if(valid(config)){$('repo').value=config.repo;$('branch').value=config.branch;$('path').value=config.path;$('autoUpdate').checked=!!config.auto;$('updateState').textContent='取得先：'+config.repo+' / '+config.path;if(config.auto)update(config,true);}buttons();
 </script>
 </body>
 </html>
