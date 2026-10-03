@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ja"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ST Tracker V2</title>
+<style>
+body{margin:0 auto;max-width:520px;padding:16px;background:#0b1020;color:#e8ecf5;font:15px/1.5 -apple-system,sans-serif}
+.c{background:#161d33;border-radius:12px;padding:12px;margin-bottom:12px}
+.big{font-size:42px;font-weight:700;text-align:center}
+button{width:100%;padding:14px;margin-top:8px;border:0;border-radius:10px;font-size:16px;font-weight:700;color:#fff;background:#4c8dff}
+button:disabled{opacity:.4}
+.r{background:#ef4444}.s{background:#3a4466}
+canvas{width:100%;height:120px;background:#000;border-radius:8px}
+pre{margin:0;font-size:12px;color:#8d97b3;white-space:pre-wrap}
+.clip{border-top:1px solid #2a3350;padding:8px 0;font-size:13px}
+.clip audio{width:100%;height:32px}
+.clip button{width:auto;padding:6px 12px;font-size:13px;margin:4px 0 0}
+input[type=range]{width:100%}
+</style></head><body>
+<h1 style="font-size:18px">睡眠記録 Tracker V2</h1>
+
+<div class="c">
+  <div class="big" id="clock">00:00:00</div>
+  <div>音量: <b id="db">--</b> dB　体動: <b id="g">--</b> G</div>
+  <div>状態: <b id="st">待機中</b>　クリップ: <b id="cnt2">0</b>本</div>
+  <canvas id="cv" width="480" height="120"></canvas>
+  <div style="margin-top:8px">検知しきい値: <b id="thv">-40</b> dB (これを超えると録音)</div>
+  <input type="range" id="th" min="-70" max="-15" value="-40">
+</div>
+
+<div class="c">
+  <button id="start">測定開始</button>
+  <button id="stop" class="r" disabled>測定終了</button>
+  <button id="csv" class="s">1秒ログをCSV保存</button>
+  <button id="clear" class="s">すべて消去</button>
+</div>
+
+<div class="c"><b>録音クリップ</b> (新しい順・最大30本)<div id="list"></div></div>
+<div class="c"><pre id="log">待機中</pre></div>
+
+<script>
+var $=function(i){return document.getElementById(i)};
+var SR=16000,PRE=3*SR,TAIL=5*SR,MAXN=120*SR;
+var rows=[],t0=0,ctx,an,buf,proc,stream,wl,lastG=null,timers=[],hist=[];
+var s={dbMax:-120,dbSum:0,n:0,gMax:0,gSum:0,gn:0};
+var th=+(localStorage.getItem('st_th')||-40);
+var pre=[],preN=0,rec=false,clip=[],clipN=0,silent=0,startMs=0,pos=0,db=db=-120;
+function log(m){$('log').textContent=m+'\n'+$('log').textContent.split('\n').slice(0,12).join('\n')}
+function reset(){s={dbMax:-120,dbSum:0,n:0,gMax:0,gSum:0,gn:0}}
+$('th').value=th;$('thv').textContent=th;
+$('th').oninput=function(){th=+this.value;$('thv').textContent=th;localStorage.setItem('st_th',th)};
+try{rows=JSON.parse(localStorage.getItem('st_rows')||'[]')}catch(e){}
+function saveRows(){try{localStorage.setItem('st_rows',JSON.stringify(rows))}catch(e){log('ログ保存失敗:'+e.message)}}
+
+// ---------- IndexedDB ----------
+var DB;
+function openDB(){return new Promise(function(ok,ng){
+var q=indexedDB.open('st_tracker',1);
+q.onupgradeneeded=function(){q.result.createObjectStore('clips',{keyPath:'start'})};
+q.onsuccess=function(){DB=q.result;ok()};q.onerror=function(){ng(q.error)};
+})}
+function dbPut(o){return new Promise(function(ok,ng){var t=DB.transaction('clips','readwrite');t.objectStore('clips').put(o);t.oncomplete=ok;t.onerror=function(){ng(t.error)}})}
+function dbAll(){return new Promise(function(ok,ng){var q=DB.transaction('clips').objectStore('clips').getAll();q.onsuccess=function(){ok(q.result)};q.onerror=function(){ng(q.error)}})}
+function dbClear(){return new Promise(function(ok){var t=DB.transaction('clips','readwrite');t.objectStore('clips').clear();t.oncomplete=ok})}
+
+// ---------- WAV ----------
+function wav(i16){
+var n=i16.length,b=new ArrayBuffer(44+n*2),v=new DataView(b);
+function w(o,t){for(var i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i))}
+w(0,'RIFF');v.setUint32(4,36+n*2,true);w(8,'WAVEfmt ');v.setUint32(16,16,true);
+v.setUint16(20,1,true);v.setUint16(22,1,true);v.setUint32(24,SR,true);v.setUint32(28,SR*2,true);
+v.setUint16(32,2,true);v.setUint16(34,16,true);w(36,'data');v.setUint32(40,n*2,true);
+for(var i=0;i<n;i++)v.setInt16(44+i*2,i16[i],true);
+return new Blob([b],{type:'audio/wav'});
+}
+function fmt(ms){var d=new Date(ms),p=function(x){return String(x).padStart(2,'0')};
+return p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds())}
+function fname(ms){var d=new Date(ms),p=function(x){return String(x).padStart(2,'0')};
+return 'snore_'+d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes())+p(d.getSeconds())+'.wav'}
+
+// ---------- 録音 ----------
+function onAudio(e){
+var d=e.inputBuffer.getChannelData(0),sum=0,i;
+for(i=0;i<d.length;i++)sum+=d[i]*d[i];
+db=20*Math.log10(Math.sqrt(sum/d.length)+1e-8);
+s.dbSum+=db;s.n++;if(db>s.dbMax)s.dbMax=db;
+// 16kHzへ変換
+var step=ctx.sampleRate/SR,out=[];
+while(pos<d.length-1){
+  var k=Math.max(0,pos|0),f=pos-k,v=d[k]*(1-f)+d[k+1]*f;
+  v=Math.max(-1,Math.min(1,v));out.push(v<0?v*32768:v*32767);pos+=step;
+}
+pos-=d.length;
+var ch=Int16Array.from(out);
+if(!rec){
+  pre.push(ch);preN+=ch.length;
+  while(pre.length>1&&preN-pre[0].length>=PRE)preN-=pre.shift().length;
+  if(db>th){
+    rec=true;clip=pre;clipN=preN;pre=[];preN=0;silent=0;
+    startMs=Date.now()-Math.round(clipN/SR*1000);
+    $('st').textContent='録音中';
+  }
+}else{
+  clip.push(ch);clipN+=ch.length;
+  if(db>th)silent=0;else silent+=ch.length;
+  if(silent>=TAIL||clipN>=MAXN)finish();
+}
+}
+function finish(){
+if(!rec)return;rec=false;$('st').textContent='監視中';
+var all=new Int16Array(clipN),o=0;
+clip.forEach(function(c){all.set(c,o);o+=c.length});
+var rec_={start:startMs,dur:clipN/SR,blob:wav(all)};
+clip=[];clipN=0;
+dbPut(rec_).then(function(){log('保存 '+fmt(rec_.start)+' '+rec_.dur.toFixed(1)+'秒');render()})
+  .catch(function(e){log('クリップ保存失敗:'+e)});
+}
+function render(){
+dbAll().then(function(a){
+  a.sort(function(x,y){return y.start-x.start});
+  $('cnt2').textContent=a.length;
+  var h=$('list');h.innerHTML='';
+  a.slice(0,30).forEach(function(c){
+    var u=URL.createObjectURL(c.blob),d=document.createElement('div');d.className='clip';
+    d.innerHTML=fmt(c.start)+' / '+c.dur.toFixed(1)+'秒 / '+Math.round(c.blob.size/1024)+'KB<br><audio controls preload="none" src="'+u+'"></audio><br>';
+    var b=document.createElement('button');b.className='s';b.textContent='保存';
+    b.onclick=function(){var l=document.createElement('a');l.href=u;l.download=fname(c.start);document.body.appendChild(l);l.click();l.remove()};
+    d.appendChild(b);h.appendChild(d);
+  });
+});
+}
+
+// ---------- 測定 ----------
+async function start(){
+try{
+  if(window.DeviceMotionEvent&&typeof DeviceMotionEvent.requestPermission==='function'){
+    log('モーション許可: '+await DeviceMotionEvent.requestPermission());
+  }else log('モーション許可: 不要');
+}catch(e){log('モーション許可エラー: '+e.message)}
+window.addEventListener('devicemotion',onMotion);
+try{
+  stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  var AC=window.AudioContext||window.webkitAudioContext;
+  ctx=new AC();await ctx.resume();
+  var src=ctx.createMediaStreamSource(stream);
+  an=ctx.createAnalyser();src.connect(an);
+  proc=ctx.createScriptProcessor(4096,1,1);
+  proc.onaudioprocess=onAudio;
+  var z=ctx.createGain();z.gain.value=0;
+  src.connect(proc);proc.connect(z);z.connect(ctx.destination);
+  log('マイクOK '+ctx.sampleRate+'Hz / '+ctx.state);
+}catch(e){log('マイクエラー: '+e.message);return}
+try{if(navigator.wakeLock){wl=await navigator.wakeLock.request('screen');log('画面ロック防止: OK')}else log('画面ロック防止: 非対応')}catch(e){log('WakeLock失敗: '+e.message)}
+t0=Date.now();reset();pos=0;pre=[];preN=0;rec=false;
+$('start').disabled=true;$('stop').disabled=false;$('st').textContent='監視中';
+timers.push(setInterval(tick,1000));
+timers.push(setInterval(saveRows,30000));
+}
+function onMotion(e){
+var a=e.accelerationIncludingGravity;if(!a||a.x==null)return;
+var g=Math.sqrt(a.x*a.x+a.y*a.y+a.z*a.z)/9.80665;
+if(lastG!==null){var d=Math.abs(g-lastG);s.gSum+=d;s.gn++;if(d>s.gMax)s.gMax=d}
+lastG=g;
+}
+function tick(){
+if(ctx&&ctx.state==='suspended')ctx.resume();
+var da=s.n?s.dbSum/s.n:-120,ga=s.gn?s.gSum/s.gn:0;
+rows.push([Date.now(),+da.toFixed(1),+s.dbMax.toFixed(1),+ga.toFixed(4),+s.gMax.toFixed(4)]);
+hist.push([da,s.gMax]);if(hist.length>240)hist.shift();
+$('db').textContent=db.toFixed(0);$('g').textContent=s.gMax.toFixed(3);
+var sec=Math.floor((Date.now()-t0)/1000);
+$('clock').textContent=[sec/3600|0,(sec/60|0)%60,sec%60].map(function(v){return String(v).padStart(2,'0')}).join(':');
+reset();draw();
+}
+function draw(){
+var c=$('cv'),x=c.getContext('2d'),w=c.width,h=c.height,st=w/240;
+x.clearRect(0,0,w,h);
+x.strokeStyle='#4c8dff';x.beginPath();
+hist.forEach(function(p,i){var y=h-Math.max(0,Math.min(1,(p[0]+90)/90))*h;i?x.lineTo(i*st,y):x.moveTo(i*st,y)});x.stroke();
+x.strokeStyle='#f59e0b';x.beginPath();
+hist.forEach(function(p,i){var y=h-Math.min(p[1]/0.2,1)*h;i?x.lineTo(i*st,y):x.moveTo(i*st,y)});x.stroke();
+x.strokeStyle='#ef4444';x.beginPath();var ty=h-((th+90)/90)*h;x.moveTo(0,ty);x.lineTo(w,ty);x.stroke();
+}
+function stop(){
+finish();timers.forEach(clearInterval);timers=[];
+window.removeEventListener('devicemotion',onMotion);
+if(proc){proc.onaudioprocess=null;proc.disconnect()}
+if(stream)stream.getTracks().forEach(function(t){t.stop()});
+if(ctx)ctx.close();an=null;
+if(wl){wl.release();wl=null}
+saveRows();
+$('start').disabled=false;$('stop').disabled=true;$('st').textContent='待機中';
+log('終了。ログ'+rows.length+'件');
+}
+function csv(){
+if(!rows.length){log('記録なし');return}
+var t='time,db_avg,db_max,motion_avg,motion_max\n'+rows.map(function(r){return new Date(r[0]).toISOString()+','+r.slice(1).join(',')}).join('\n');
+var a=document.createElement('a');
+a.href=URL.createObjectURL(new Blob([t],{type:'text/csv'}));
+a.download='sleep_'+new Date().toISOString().slice(0,10)+'.csv';
+document.body.appendChild(a);a.click();a.remove();
+}
+$('start').onclick=start;$('stop').onclick=stop;$('csv').onclick=csv;
+$('clear').onclick=function(){
+if(!confirm('ログとクリップをすべて消しますか？'))return;
+rows=[];hist=[];localStorage.removeItem('st_rows');dbClear().then(render);draw();
+};
+openDB().then(render).catch(function(e){log('IndexedDBエラー: '+e)});
+</script>
+</body></html>
