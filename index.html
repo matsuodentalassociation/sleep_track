@@ -1,1227 +1,349 @@
-<!DOCTYPE html>
-<html lang="ja">
+<!doctype html>
+<html lang="ja" data-sleep-app="sleep-event-recorder" data-sleep-version="2">
 <head>
-<meta charset="UTF-8">
+<meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#000000">
-<meta name="color-scheme" content="dark">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black">
-<meta http-equiv="Cache-Control" content="no-cache,no-store,must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
-<meta name="sleep-app-id" content="sleep-event-pcm-test">
-<meta name="sleep-app-version" content="06">
-<title>音イベント記録テスト v06</title>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>睡眠音イベント記録 v02</title>
 <style>
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100%;background:#000;color:#eee;font-family:system-ui,sans-serif}
-body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
-main{max-width:760px;margin:auto;padding:18px}
-h1{font-size:23px}h2{font-size:18px}
-section{background:#141414;border:1px solid #333;border-radius:12px;padding:16px;margin:14px 0}
-p{line-height:1.65}
-.small{font-size:13px;color:#bbb;overflow-wrap:anywhere}
-.row{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
-button,.save{border:0;border-radius:8px;padding:12px 15px;background:#275fc5;color:#fff;font-size:15px;text-decoration:none;display:inline-block}
-button:disabled{opacity:.4}
-#stop{background:#a52d3e}
-input[type=text],select{width:100%;padding:10px;background:#222;color:#eee;border:1px solid #555;border-radius:6px}
-label{display:block;margin:12px 0 5px}
-.meter{height:15px;background:#333;border-radius:8px;overflow:hidden}
-#level{height:100%;width:0;background:#38a66c}
-#error{color:#ff9393;white-space:pre-wrap}
-#state{font-weight:bold}
-#dark{display:none;position:fixed;inset:0;z-index:999;background:#000;touch-action:none;user-select:none;-webkit-user-select:none}
-#dark.on{display:flex;align-items:center;justify-content:center}
-#clock{font-size:36px;color:#777;visibility:hidden}
-audio{width:100%;margin:10px 0}
-.clip{border-top:1px solid #444;padding:12px 0}
-summary{cursor:pointer}
+*{box-sizing:border-box}body{margin:0;background:#090d14;color:#eef3fa;font-family:system-ui,sans-serif;padding:20px;padding-top:max(20px,env(safe-area-inset-top));padding-bottom:max(20px,env(safe-area-inset-bottom))}main{max-width:760px;margin:auto}h1{font-size:1.4rem}h2{font-size:1.1rem}.card{background:#17202d;border:1px solid #35445c;border-radius:12px;padding:16px;margin:14px 0}.row{display:flex;gap:8px;flex-wrap:wrap}button,select{font:inherit;padding:12px;border-radius:8px;border:1px solid #52627a;color:white;background:#263a52;min-height:46px}button:disabled{opacity:.4}.primary{background:#156256}.muted{color:#afbdd0;font-size:.9rem;line-height:1.6}.error{color:#ffb7b7;white-space:pre-wrap}.hidden{display:none}a{color:#8fd5ff}textarea{width:100%;height:200px;background:#080c12;color:white}audio{width:100%;margin-top:12px}.item{border-top:1px solid #35445c;padding:12px 0}#dark{display:none;position:fixed;inset:0;background:black;z-index:100;touch-action:none;user-select:none;-webkit-user-select:none}#clock{height:100%;display:flex;align-items:center;justify-content:center;color:#555;font-size:3rem}progress{width:100%}
 </style>
 </head>
-<body>
-<main>
-<h1>音イベント記録テスト v06</h1>
-<p id="runtime" class="small"></p>
-<p class="small">
-PCM→WAV方式の検証版です。最初の30秒の中央値＋6 dB、
-3秒プリロール、5秒終了待ち。分類は行いません。
-最初は2～3分で確認してください。
-</p>
-
-<section>
-<div id="state" role="status">起動準備中</div>
-<div class="row">
-<button id="start" disabled>開始</button>
-<button id="stop" disabled>停止</button>
-<button id="black" disabled>暗画面</button>
-</div>
-<div class="meter"><div id="level"></div></div>
-<p id="input" class="small">入力：未開始</p>
-<p id="baseline" class="small">基準：未測定</p>
-<p id="storage" class="small">保存：未開始</p>
-<p id="motion" class="small">体動：未開始</p>
-<p id="wake" class="small">Wake Lock：未開始</p>
-<p id="error" role="alert"></p>
+<body><main>
+<h1>睡眠中の音イベント記録 v02</h1>
+<p class="muted">圧縮音声・端末内保存／実機未検証。最初は2〜3分で録音・再生・取り出しを確認してください。</p>
+<section class="card">
+<div class="row"><button id="start" class="primary" disabled>記録開始</button><button id="stop" disabled>終了して保存</button><button id="dim" disabled>暗画面</button></div>
+<p id="status" role="status">保存機能を準備中</p><p id="stats">音量 — ／ 基準 — ／ しきい値 —</p><progress id="meter" max="100" value="0"></progress>
+<p id="amount">音声 0 MB ／ ログ 0 MB ／ 経過 0分</p><p id="permission" class="muted">マイク・体動：未開始</p><p id="wake" class="muted">画面点灯維持：未要求</p><p id="error" class="error" role="alert"></p>
 </section>
-
-<section>
-<h2>保存済み記録</h2>
-<p class="small">
-音声・ログは端末内のIndexedDBへ逐次保存します。
-サイトデータの削除やプライベートモードでは保持に制限があります。
-突然の終了では直近の未保存分を失う可能性があります。
-</p>
-<label for="sessions">セッション</label>
-<select id="sessions"></select>
-<div class="row">
-<button id="export" disabled>ZIPを作成</button>
-<button id="reload">一覧を更新</button>
-</div>
-<p id="exportState" class="small"></p>
-<div id="downloads"></div>
-<div id="clips"></div>
+<section class="card"><h2>出力</h2>
+<select id="sessionSelect" aria-label="出力する記録"></select>
+<div class="row"><button id="csv" disabled>ログ出力（CSV）</button><button id="audioList" disabled>音声出力</button><button id="zip" disabled>まとめて出力（ZIP）</button><button id="refresh">一覧更新</button></div>
+<p id="sessionInfo" class="muted">記録はまだありません</p>
+<div id="clips" class="hidden"><select id="clipSelect" aria-label="音声を選択"></select><button id="prepareAudio">選択した音声を準備</button></div>
+<div id="output" class="hidden"><p id="fileInfo"></p><div class="row"><button id="share" class="primary" disabled>共有・ファイルに保存</button><a id="download">通常ダウンロード</a><a id="open" target="_blank" rel="noopener">開く</a></div><audio id="player" controls class="hidden"></audio>
+<details id="csvDetails" class="hidden"><summary>CSV表示・コピー</summary><textarea id="csvText" readonly></textarea><button id="copy">CSVをコピー</button></details></div>
+<p class="muted">iPhone：準備後に「共有・ファイルに保存」を押します。共有やBlobダウンロードは端末依存です。音声は個別出力もできます。記録は出力しても削除しません。</p>
 </section>
-
-<section>
-<details>
-<summary>GitHub最新版取得</summary>
-<p class="small">
-自分が管理する信頼できるリポジトリだけを指定してください。
-取得したHTMLはこのページで実行されます。
-記録中は適用しません。通信失敗時は現在版を維持します。
-</p>
-<label for="repo">リポジトリ</label>
-<input id="repo" type="text" value="matsuodentalassociation/sleep_track">
-<label for="branch">ブランチ</label>
-<input id="branch" type="text" value="main">
-<label for="path">HTMLファイルの場所</label>
-<input id="path" type="text" value="sleep_track_test_v06.html">
-<label><input id="autoUpdate" type="checkbox" checked> 起動時に確認・適用</label>
-<div class="row"><button id="update">設定を保存して最新版を適用</button></div>
-<p id="updateState" class="small"></p>
-</details>
-</section>
-
-<p class="small">
-WAVは圧縮音声より容量が大きくなります。
-ZIP生成中は一時的なメモリ負荷が生じます。
-このZIPと旧解析アプリの完全互換は未確認です。
-iOSの手動ロック・背景中の連続取得は保証できません。
-音声はサーバーへ送信しません。更新確認時のみGitHubへ通信します。
-</p>
-</main>
-<div id="dark"><div id="clock"></div></div>
-
+<section class="card"><h2>更新</h2><p id="version" class="muted">実行版 v02 ／ コミット未固定</p><div class="row"><button id="reload">キャッシュ回避で再読込</button><button id="update">GitHub最新版を取得・適用</button></div><p id="updateStatus" class="muted"></p></section>
+<section class="card muted"><strong>仕様と制約</strong><ul>
+<li>最初の30秒の中央値＋6dB。開始はしきい値超過、終了待ちはしきい値以下が5秒。音量は相対dBです。</li>
+<li>3秒遅延した音声をイベント録音に供給します。終了時は最後の音声を取得するため最大約3秒待ちます。録音開始・停止の実時間には端末依存の誤差があります。</li>
+<li>音声はMediaRecorderが対応するMP4/AACまたはWebM/Opus。24kbpsを要求しますが、実際の形式・ビットレートは端末依存です。</li>
+<li>音量・体動ログは各最大1件/秒。体動はその区間の最大加速度の代表サンプルを保存し、全サンプルは保存しません。</li>
+<li>音声チャンクは約1秒ごとにIndexedDBへ保存。OS中断時の未保存分・未完結音声の再生は保証しません。</li>
+<li>HTTPS必須。iPhoneはSafariからホーム画面に追加して起動。手動ロック・背景中の連続記録は保証しません。</li>
+<li>イベント時間制限なし。圧縮しても長いイベントの容量は増えます。大きなZIPはメモリ不足になり得ます。</li>
+<li>旧解析アプリ互換、終夜安定性、実機上の更新動作は未検証です。自動で更新せず、利用者のボタン操作で適用します。</li>
+</ul></section></main><div id="dark"><div id="clock"></div></div>
 <script>
-(() => {
 'use strict';
-
-const VERSION = 6;
-const APP_ID = 'sleep-event-pcm-test';
-const DB_NAME = 'sleep-event-pcm-test-v1';
-const CONFIG_KEY = 'sleep-event-pcm-update-v1';
-const $ = id => document.getElementById(id);
-
-const instance = {};
-window.__sleepPCMInstance = instance;
-const current = () => window.__sleepPCMInstance === instance;
-const controller = new AbortController();
-const urls = [];
-let db, ctx, stream, source, node, gain, wake;
-let running = false, starting = false, stopping = false;
-let exporting = false, updating = false;
-let session = null, baseClip = null, eventClip = null;
-let ring = [], ringFrames = 0, baseValues = [];
-let rate = 0, frame = 0, baseline = null, threshold = null;
-let lowFrames = 0, originPerf = 0, ctxOrigin = 0;
-let audioOffset = 0, lastReceive = 0;
-let recentDb = null, maxDb = -Infinity, lastMotion = -Infinity;
-let savedBytes = 0, savedParts = 0, motionCount = 0;
-let logs = [], saveQueue = Promise.resolve(), pendingWrites = 0;
-let saveFailure = null, endAck = null, flushTimer;
-let darkTimer, holdTimer, clockTimer, uiTimer;
-let clipCounter = 0, lastGapWarn = 0;
-let requestedEnd = false, stopPromise = null;
-let config = {
-  repo: 'matsuodentalassociation/sleep_track',
-  branch: 'main',
-  path: 'sleep_track_test_v06.html',
-  auto: true
-};
-
-function on(target, name, fn, options = {}) {
-  target.addEventListener(name, fn, {...options, signal:controller.signal});
+const VERSION=2, APP='sleep-event-recorder', SCHEMA='sleep-event-compressed-v02';
+const REPO='matsuodentalassociation/sleep_track', BRANCH='main', FILE='sleep_event_v02.html';
+const BITRATE=24000, DELAY=3, MB=1000000;
+const $=id=>document.getElementById(id), uid=()=>crypto.randomUUID();
+const iso=t=>new Date(t).toISOString(), sleep=ms=>new Promise(r=>setTimeout(r,ms));
+let db, session=null, busy=false, chain=Promise.resolve(), wake=null, prepared=null, objectURL=null, records=[];
+function error(e){$('error').textContent=e.message||String(e)}
+function controls(){
+ const blocked=!!session||busy;
+ $('start').disabled=blocked||!db;
+ for(const id of ['csv','audioList','zip'])$(id).disabled=blocked||!records.length;
+ for(const id of ['sessionSelect','prepareAudio','refresh','reload','update'])$(id).disabled=blocked;
+ $('stop').disabled=!session||session.stopping;
+ $('dim').disabled=!session||session.stopping;
+ $('share').disabled=blocked||!prepared||!canShare(prepared);
+ $('download').style.pointerEvents=blocked?'none':'';
+ $('open').style.pointerEvents=blocked?'none':'';
 }
-function errorText(e) {
-  return e && e.message ? e.message : String(e);
+function canShare(f){try{return !!navigator.canShare&&navigator.canShare({files:[f]})}catch(_){return false}}
+function database(){return new Promise((ok,no)=>{
+ const r=indexedDB.open('sleep-event-compressed-v02',1);
+ r.onupgradeneeded=()=>{
+  const d=r.result;d.createObjectStore('sessions',{keyPath:'id'});
+  for(const name of ['clips','parts','logs']){const s=d.createObjectStore(name,{keyPath:'id'});s.createIndex('session','session')}
+  r.transaction.objectStore('parts').createIndex('clip','clip');
+ };
+ r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);
+ r.onblocked=()=>error(new Error('他のアプリ画面を閉じてください。'));
+})}
+function all(name,index,key){return new Promise((ok,no)=>{
+ const store=db.transaction(name).objectStore(name),r=index?store.index(index).getAll(key):store.getAll();
+ r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);
+})}
+function one(name,key){return new Promise((ok,no)=>{const r=db.transaction(name).objectStore(name).get(key);r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error)})}
+function write(meta,clips=[],parts=[],logs=[]){return new Promise((ok,no)=>{
+ const t=db.transaction(['sessions','clips','parts','logs'],'readwrite');t.objectStore('sessions').put(meta);
+ for(const [name,values] of [['clips',clips],['parts',parts],['logs',logs]])for(const v of values)t.objectStore(name).put(v);
+ t.oncomplete=ok;t.onabort=t.onerror=()=>no(t.error||new Error('端末内保存に失敗'));
+})}
+function elapsed(s){return performance.now()-s.perf}
+function log(s,event,extra={},ms=elapsed(s)){
+ const value={id:uid(),session:s.meta.id,event,epoch_ms:s.meta.startEpoch+ms,iso_utc:iso(s.meta.startEpoch+ms),elapsed_ms:ms,...extra};
+ s.logs.push(value);s.meta.logBytes+=new TextEncoder().encode(JSON.stringify(value)).length;
 }
-function elapsed() {
-  return Math.max(0, performance.now() - originPerf);
+function flush(s,clips=[],parts=[]){
+ const logs=s.logs.splice(0),meta=structuredClone(s.meta),cc=clips.map(c=>structuredClone(c));
+ chain=chain.then(()=>write(meta,cc,parts,logs));
+ chain.catch(e=>saveFailure(s,e));return chain;
 }
-function note(type, data = {}) {
-  if (!session) return;
-  logs.push({session:session.id, type, elapsed_ms:elapsed(), ...data});
+function saveFailure(s,e){
+ if(s.failed)return;s.failed=true;s.stopping=true;
+ for(const c of s.active)try{if(c.recorder.state!=='inactive')c.recorder.stop()}catch(_){}
+ cleanup(s);session=null;busy=false;controls();$('status').textContent='保存失敗：記録停止';error(e);
+ refresh().catch(()=>{});
 }
-function uiError(e) {
-  if (current()) $('error').textContent = errorText(e);
+const processor=`class Level extends AudioWorkletProcessor{
+ constructor(){super();this.n=0;this.sum=0;this.block=Math.round(sampleRate/10)}
+ process(inputs){const a=inputs[0];if(!a||!a.length)return true;
+ for(let i=0;i<a[0].length;i++){let x=0;for(const c of a)x+=c[i];x/=a.length;this.sum+=x*x;this.n++;
+ if(this.n>=this.block){this.port.postMessage({db:20*Math.log10(Math.max(1e-8,Math.sqrt(this.sum/this.n))),frame:currentFrame+i+1});this.sum=0;this.n=0}}
+ return true}}registerProcessor('sleep-level-v02',Level);`;
+function chooseMime(){
+ for(const m of ['audio/mp4;codecs=mp4a.40.2','audio/mp4','audio/webm;codecs=opus','audio/webm'])if(MediaRecorder.isTypeSupported(m))return m;
+ return '';
 }
-function busy() {
-  return running || starting || stopping || exporting;
+async function requestWake(){
+ if(!session||session.stopping||document.visibilityState!=='visible')return;
+ if(!navigator.wakeLock){$('wake').textContent='画面点灯維持：非対応';return}
+ try{if(wake&&!wake.released)return;wake=await navigator.wakeLock.request('screen');$('wake').textContent='画面点灯維持：取得済み';wake.addEventListener('release',()=>{wake=null;$('wake').textContent='画面点灯維持：解除'})}
+ catch(e){$('wake').textContent='画面点灯維持：取得失敗 '+e.message}
 }
-function controls() {
-  if (!current()) return;
-  $('start').disabled = !db || busy() || updating;
-  $('stop').disabled = !running || stopping;
-  $('black').disabled = !running;
-  $('export').disabled = busy() || updating || !$('sessions').value;
-  $('update').disabled = busy() || updating;
-  $('reload').disabled = busy() || updating;
+function cleanup(s){
+ clearInterval(s.timer);clearTimeout(s.dimTimer);window.removeEventListener('devicemotion',motion);
+ if(s.worklet)s.worklet.port.onmessage=null;
+ if(s.stream)s.stream.getTracks().forEach(t=>t.stop());
+ if(s.ctx)s.ctx.close().catch(()=>{});
+ if(wake){wake.release().catch(()=>{});wake=null}
+ $('dark').style.display='none';
 }
-function openDB() {
-  return new Promise((resolve,reject) => {
-    const r = indexedDB.open(DB_NAME,1);
-    r.onupgradeneeded = () => {
-      const d = r.result;
-      d.createObjectStore('sessions',{keyPath:'id'});
-      const c = d.createObjectStore('clips',{keyPath:'key'});
-      c.createIndex('session','session');
-      const p = d.createObjectStore('parts',{keyPath:'id',autoIncrement:true});
-      p.createIndex('clip','clip');
-      const l = d.createObjectStore('logs',{keyPath:'id',autoIncrement:true});
-      l.createIndex('session','session');
-    };
-    r.onsuccess = () => {
-      r.result.onversionchange = () => r.result.close();
-      resolve(r.result);
-    };
-    r.onerror = () => reject(r.error);
-    r.onblocked = () => reject(new Error('データベースが別の画面で使用されています。'));
-  });
+function beginClip(s,kind,startMs,eventMs=null){
+ const stream=kind==='baseline'?s.direct.stream:s.delayed.stream;
+ const options={audioBitsPerSecond:BITRATE};if(s.mime)options.mimeType=s.mime;
+ const recorder=new MediaRecorder(stream,options),mime=recorder.mimeType;
+ if(!/audio\/(mp4|webm)/i.test(mime))throw new Error('対応する圧縮音声形式を確定できません：'+mime);
+ const clip={id:uid(),session:s.meta.id,kind,mime_type:mime,audio_file:'audio/'+kind+'_'+uid()+(/mp4/i.test(mime)?'.m4a':'.webm'),
+ start_elapsed_ms:Math.max(0,startMs),start_epoch_ms:s.meta.startEpoch+Math.max(0,startMs),
+ event_elapsed_ms:eventMs,event_epoch_ms:eventMs===null?null:s.meta.startEpoch+eventMs,
+ end_elapsed_ms:null,event_duration_seconds:null,complete:false,bytes:0,parts:0,sample_rate:s.ctx.sampleRate,
+ requested_bits_per_second:BITRATE,recorder_bits_per_second:recorder.audioBitsPerSecond,
+ timing_note:'3秒DelayNodeと100ms音量判定。ファイル境界にはMediaRecorderの起動停止遅延が含まれ得る。'};
+ const c={clip,recorder,seq:0,timer:null,resolve:null,ending:false};
+ c.done=new Promise(r=>c.resolve=r);s.active.add(c);s.clips.push(clip);
+ recorder.ondataavailable=e=>{
+  if(!e.data.size||s.failed)return;
+  clip.bytes+=e.data.size;clip.parts++;
+  s.meta.audioBytes+=e.data.size;s.pendingBytes+=e.data.size;
+  if(s.pendingBytes>12*1024*1024){saveFailure(s,new Error('保存待ち音声が増えたため停止しました'));return}
+  flush(s,[clip],[{id:uid(),session:s.meta.id,clip:clip.id,seq:c.seq++,blob:e.data}]).then(()=>s.pendingBytes-=e.data.size).catch(()=>{});
+ };
+ recorder.onerror=e=>{error(e.error||new Error('音声エンコード失敗'));if(!s.stopping)stopRecording('recorder_error').catch(error)};
+ recorder.onstop=()=>{
+  clearTimeout(c.timer);s.active.delete(c);clip.complete=true;
+  if(clip.end_elapsed_ms===null)clip.end_elapsed_ms=elapsed(s)-(kind==='event'?DELAY*1000:0);
+  clip.end_epoch_ms=s.meta.startEpoch+clip.end_elapsed_ms;
+  clip.audio_duration_seconds=Math.max(0,(clip.end_elapsed_ms-clip.start_elapsed_ms)/1000);
+  log(s,'audio_saved',{audio_file:clip.audio_file,mime_type:mime,duration_seconds:clip.audio_duration_seconds});
+  flush(s,[clip]).then(()=>c.resolve()).catch(()=>c.resolve());
+ };
+ recorder.start(1000);flush(s,[clip]).catch(()=>{});
+ return c;
 }
-function write(stores, fn) {
-  return new Promise((resolve,reject) => {
-    let tx;
-    try {
-      tx = db.transaction(stores,'readwrite');
-      fn(tx);
-    } catch(e) {
-      reject(e);
-      return;
-    }
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error || new Error('端末内保存に失敗しました。'));
-    tx.onabort = () => reject(tx.error || new Error('保存が中断されました。'));
-  });
+function finishClip(s,c,endMs,reason){
+ if(!c||c.ending)return;c.ending=true;c.clip.end_elapsed_ms=endMs;c.clip.end_epoch_ms=s.meta.startEpoch+endMs;c.clip.reason=reason;
+ if(c.clip.kind==='event'){
+  c.clip.event_duration_seconds=Math.max(0,(endMs-c.clip.event_elapsed_ms)/1000);
+  log(s,'event_end',{audio_file:c.clip.audio_file,duration_seconds:c.clip.event_duration_seconds,note:reason},endMs);
+  // Stop after delayed audio has reached the clip's logical end.
+  c.timer=setTimeout(()=>{if(c.recorder.state!=='inactive')c.recorder.stop()},DELAY*1000);
+ }else if(c.recorder.state!=='inactive')c.recorder.stop();
 }
-function readAll(store,index,key) {
-  return new Promise((resolve,reject) => {
-    const tx = db.transaction(store,'readonly');
-    const s = tx.objectStore(store);
-    const r = index ? s.index(index).getAll(key) : s.getAll();
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-  });
-}
-function readOne(store,key) {
-  return new Promise((resolve,reject) => {
-    const r = db.transaction(store,'readonly').objectStore(store).get(key);
-    r.onsuccess = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-  });
-}
-function queueWrite(stores, fn, after) {
-  pendingWrites++;
-  saveQueue = saveQueue.then(async () => {
-    if (saveFailure) return;
-    await write(stores,fn);
-    if (after) after();
-  }).catch(e => {
-    if (!saveFailure) {
-      saveFailure = e;
-      uiError('保存失敗：' + errorText(e));
-      if (running && !stopping) void stop('storage-error');
-    }
-  }).finally(() => {pendingWrites--;});
-  return saveQueue;
-}
-
-function makeClip(kind,startFrame,startMs,detectFrame=null,detectMs=null) {
-  const id = kind === 'baseline' ? 'baseline' : 'event-' + (++clipCounter);
-  return {
-    key:session.id + ':' + id,
-    session:session.id,
-    id, kind,
-    file:'audio/' + id + '.wav',
-    rate,
-    start_frame:startFrame,
-    detection_frame:detectFrame,
-    start_elapsed_ms:startMs,
-    detection_elapsed_ms:detectMs,
-    last_elapsed_ms:startMs,
-    frames:0,
-    persisted_frames:0,
-    parts:0,
-    status:'recording',
-    pending:[],
-    pendingFrames:0
-  };
-}
-function clipRecord(c) {
-  return {
-    key:c.key, session:c.session, id:c.id, kind:c.kind, file:c.file,
-    rate:c.rate, start_frame:c.start_frame,
-    detection_frame:c.detection_frame,
-    start_elapsed_ms:c.start_elapsed_ms,
-    detection_elapsed_ms:c.detection_elapsed_ms,
-    end_elapsed_ms:c.last_elapsed_ms,
-    frames:c.persisted_frames, parts:c.parts, status:c.status,
-    duration_seconds:c.persisted_frames / c.rate,
-    event_duration_ms:c.detection_elapsed_ms == null ? null :
-      Math.max(0,c.last_elapsed_ms-c.detection_elapsed_ms)
-  };
-}
-function append(c,pcm,endMs) {
-  if (!pcm.length) return;
-  c.pending.push(pcm);
-  c.pendingFrames += pcm.length;
-  c.frames += pcm.length;
-  c.last_elapsed_ms = endMs;
-  if (c.pendingFrames >= rate) flushClip(c);
-}
-function flushClip(c,final=false) {
-  if (!c) return;
-  let data = null;
-  if (c.pendingFrames) {
-    data = new Int16Array(c.pendingFrames);
-    let n = 0;
-    for (const a of c.pending) {data.set(a,n);n += a.length;}
-    c.pending = [];
-    c.pendingFrames = 0;
-    c.persisted_frames += data.length;
-    c.parts++;
+async function startRecording(){
+ if(session||busy)return;busy=true;controls();$('error').textContent='';$('status').textContent='権限と音声処理を準備中';let s,ctx,stream;
+ try{
+  if(!isSecureContext||!navigator.mediaDevices||!window.MediaRecorder)throw new Error('HTTPSとMediaRecorder対応ブラウザが必要です');
+  const AC=window.AudioContext||window.webkitAudioContext;ctx=new AC();
+  const resume=ctx.resume();
+  let motionPermission=Promise.resolve('unsupported');
+  if(typeof DeviceMotionEvent!=='undefined'){
+   try{motionPermission=typeof DeviceMotionEvent.requestPermission==='function'?DeviceMotionEvent.requestPermission().catch(()=> 'denied'):Promise.resolve('granted')}catch(_){motionPermission=Promise.resolve('denied')}
   }
-  if (!data && !final) return;
-  const record = clipRecord(c);
-  const part = data ? {
-    clip:c.key, session:c.session, sequence:c.parts,
-    pcm:data.buffer
-  } : null;
-  queueWrite(['clips','parts'], tx => {
-    tx.objectStore('clips').put(record);
-    if (part) tx.objectStore('parts').add(part);
-  }, () => {
-    if (data) {savedBytes += data.byteLength;savedParts++;}
-  });
+  if(/Android/i.test(navigator.userAgent)&&document.documentElement.requestFullscreen)document.documentElement.requestFullscreen().catch(()=>{});
+  await resume;if(!ctx.audioWorklet)throw new Error('AudioWorklet非対応です。録音は開始しません');
+  const u=URL.createObjectURL(new Blob([processor],{type:'text/javascript'}));try{await ctx.audioWorklet.addModule(u)}finally{URL.revokeObjectURL(u)}
+  stream=await navigator.mediaDevices.getUserMedia({audio:{channelCount:1,autoGainControl:false,noiseSuppression:false,echoCancellation:false},video:false});
+  const permission=await motionPermission;
+  s={ctx,stream,perf:performance.now(),logs:[],clips:[],active:new Set(),failed:false,stopping:false,pendingBytes:0,
+   baseline:[],baselineFrames:0,baselineComplete:false,event:null,quietBlocks:0,db:null,maxDb:null,motionSample:null,motionCount:0,
+   lastPacket:null,anchor:null,firstFrame:null,packetGap:false,mime:chooseMime(),
+   meta:{id:uid(),app:APP,version:VERSION,schema:SCHEMA,state:'recording',startEpoch:Date.now(),sampleRate:ctx.sampleRate,
+    baselineDb:null,thresholdDb:null,audioBytes:0,logBytes:0,motionPermission:permission,microphoneSettings:stream.getAudioTracks()[0].getSettings(),
+    requestedBitrate:BITRATE,motionAggregation:'1秒ごと、最大加速度の代表値',timing:'performance.now + AudioContext sample frames'}};
+  session=s;chain=Promise.resolve();log(s,'session_start');await flush(s);if(s.failed)throw new Error('初期保存失敗');
+  const src=ctx.createMediaStreamSource(stream);s.direct=ctx.createMediaStreamDestination();s.delayed=ctx.createMediaStreamDestination();
+  s.direct.channelCount=1;s.direct.channelCountMode='explicit';s.delayed.channelCount=1;s.delayed.channelCountMode='explicit';
+  s.delay=ctx.createDelay(DELAY+0.1);s.delay.delayTime.value=DELAY;
+  src.connect(s.direct);src.connect(s.delay);s.delay.connect(s.delayed);
+  s.worklet=new AudioWorkletNode(ctx,'sleep-level-v02');const silent=ctx.createGain();silent.gain.value=0;src.connect(s.worklet);s.worklet.connect(silent);silent.connect(ctx.destination);
+  s.worklet.port.onmessage=e=>level(s,e.data);
+  s.baselineClip=beginClip(s,'baseline',0);
+  ctx.onstatechange=()=>{if(session!==s||s.stopping)return;log(s,'audio_context_state',{note:ctx.state});if(ctx.state!=='running')stopRecording('audio_context_interrupted').catch(error)};
+  for(const t of stream.getAudioTracks())t.addEventListener('ended',()=>{if(!s.stopping)stopRecording('microphone_ended').catch(error)});
+  if(permission==='granted')window.addEventListener('devicemotion',motion);
+  s.timer=setInterval(()=>tick(s),1000);s.dimTimer=setTimeout(()=>{if(session===s&&!s.stopping)$('dark').style.display='block'},60000);
+  busy=false;controls();requestWake();$('status').textContent='環境音を30秒測定中';
+ }catch(e){
+  if(s){s.stopping=true;s.meta.state='start_failed';log(s,'start_failed',{note:e.message});for(const c of s.active)try{c.recorder.stop()}catch(_){};await Promise.all([...s.active].map(c=>c.done));cleanup(s);try{await flush(s)}catch(_){}}
+  else{stream?.getTracks().forEach(t=>t.stop());ctx?.close().catch(()=>{})}
+  session=null;busy=false;controls();error(e);$('status').textContent='開始できませんでした';refresh().catch(()=>{});
+ }
 }
-function finishClip(c,status='complete') {
-  if (!c) return;
-  c.status = status;
-  flushClip(c,true);
+function level(s,p){
+ if(session!==s||s.stopping||s.failed)return;
+ const now=performance.now();
+ if(s.lastPacket!==null&&now-s.lastPacket>2500){log(s,'audio_packet_gap',{note:'2.5秒以上の受信間隔'});stopRecording('audio_packet_gap').catch(error);return}
+ s.lastPacket=now;
+ if(s.anchor===null){s.anchor=now;s.firstFrame=p.frame}
+ const ms=s.anchor-s.perf+(p.frame-s.firstFrame)/s.ctx.sampleRate*1000;
+ s.db=p.db;s.maxDb=s.maxDb===null?p.db:Math.max(s.maxDb,p.db);
+ if(!s.baselineComplete){
+  s.baseline.push(p.db);s.baselineFrames++;
+  if(s.baselineFrames>=300){
+   const a=s.baseline.slice().sort((x,y)=>x-y),n=a.length;s.meta.baselineDb=(a[(n-1)>>1]+a[n>>1])/2;s.meta.thresholdDb=s.meta.baselineDb+6;
+   s.baselineComplete=true;finishClip(s,s.baselineClip,ms,'baseline_complete');log(s,'baseline_complete',{note:JSON.stringify({baselineDb:s.meta.baselineDb,thresholdDb:s.meta.thresholdDb})},ms);
+  }
+ }else if(!s.event){
+  if(p.db>s.meta.thresholdDb){
+   try{s.event=beginClip(s,'event',ms-DELAY*1000,ms);s.quietBlocks=0;log(s,'event_start',{audio_file:s.event.clip.audio_file},ms)}catch(e){error(e);stopRecording('recorder_start_failed').catch(error)}
+  }
+ }else{
+  s.quietBlocks=p.db>s.meta.thresholdDb?0:s.quietBlocks+1;
+  if(s.quietBlocks>=50){finishClip(s,s.event,ms,'quiet_5_seconds');s.event=null;s.quietBlocks=0}
+ }
 }
-function flushLogs() {
-  if (!session || saveFailure) return;
-  if (maxDb !== -Infinity) {
-    note('level-1s',{max_db:maxDb,audio_frame:frame});
-    maxDb = -Infinity;
-  }
-  const batch = logs.splice(0);
-  const snap = {...session, saved_bytes:savedBytes, saved_parts:savedParts};
-  queueWrite(['sessions','logs'],tx => {
-    tx.objectStore('sessions').put(snap);
-    const s = tx.objectStore('logs');
-    for (const row of batch) s.add(row);
-  });
+function motion(e){
+ const s=session;if(!s||s.stopping)return;
+ const a=e.acceleration,g=e.accelerationIncludingGravity,r=e.rotationRate;
+ const val=x=>Number.isFinite(x)?x:null;
+ const score=v=>v&&[v.x,v.y,v.z].every(Number.isFinite)?Math.hypot(v.x,v.y,v.z):null;
+ const m=score(a)??score(g);s.motionCount++;
+ const v={accel_x:val(a?.x),accel_y:val(a?.y),accel_z:val(a?.z),gravity_x:val(g?.x),gravity_y:val(g?.y),gravity_z:val(g?.z),rotation_alpha:val(r?.alpha),rotation_beta:val(r?.beta),rotation_gamma:val(r?.gamma),sensor_interval_ms:val(e.interval),score:m,time:elapsed(s)};
+ if(!s.motionSample||(m!==null&&(s.motionSample.score===null||m>s.motionSample.score)))s.motionSample=v;
 }
-
-const WORKLET = `
-class PCMRecorder extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.size = Math.max(128, Math.round(sampleRate / 10));
-    this.buf = new Int16Array(this.size);
-    this.count = 0;
-    this.square = 0;
-    this.frame = 0;
-    this.active = false;
-    this.startTime = 0;
-    this.port.onmessage = e => {
-      if (e.data === 'start') {
-        this.active = true;
-        this.startTime = currentTime;
-        this.port.postMessage({type:'started',contextTime:currentTime});
-      }
-      if (e.data === 'stop') {
-        this.active = false;
-        this.send();
-        this.port.postMessage({type:'ended'});
-      }
-    };
-  }
-  send() {
-    if (!this.count) return;
-    const a = this.buf.slice(0,this.count);
-    const rms = Math.sqrt(this.square / this.count);
-    this.port.postMessage({
-      type:'pcm', pcm:a.buffer,
-      startFrame:this.frame-this.count, endFrame:this.frame,
-      db:20*Math.log10(Math.max(rms,0.0000001)),
-      contextTime:currentTime
-    },[a.buffer]);
-    this.count = 0;
-    this.square = 0;
-  }
-  process(inputs,outputs) {
-    for (const o of outputs) for (const channel of o) channel.fill(0);
-    if (!this.active) return true;
-    const input = inputs[0];
-    if (!input || !input.length || !input[0].length) return true;
-    const count = input[0].length;
-    for (let i=0;i<count;i++) {
-      let x = 0;
-      for (let c=0;c<input.length;c++) x += input[c][i] || 0;
-      x /= input.length;
-      x = Math.max(-1,Math.min(1,x));
-      this.buf[this.count++] = Math.round(x < 0 ? x*32768 : x*32767);
-      this.square += x*x;
-      this.frame++;
-      if (this.count === this.size) this.send();
-    }
-    return true;
-  }
+function tick(s){
+ if(session!==s||s.stopping)return;
+ if(s.lastPacket!==null&&performance.now()-s.lastPacket>2500){log(s,'audio_packet_gap');stopRecording('audio_packet_gap').catch(error);return}
+ log(s,'level',{note:JSON.stringify({maxDb:s.maxDb,motionSamples:s.motionCount,motionState:s.motionSample?'received':'not_received'})});s.maxDb=null;
+ if(s.motionSample){const {score,time,...values}=s.motionSample;log(s,'motion', {...values,note:'1秒区間の代表値；受信件数='+s.motionCount},time)}
+ s.motionSample=null;s.motionCount=0;flush(s).catch(()=>{});
+ $('amount').textContent='音声 '+(s.meta.audioBytes/MB).toFixed(2)+' MB ／ ログJSON推計 '+(s.meta.logBytes/MB).toFixed(2)+' MB ／ 経過 '+Math.floor(elapsed(s)/60000)+'分';
+ $('permission').textContent='マイク：'+(s.lastPacket===null?'PCM判定待ち':'音量判定受信済み')+' ／ 体動権限：'+s.meta.motionPermission;
+ $('status').textContent=!s.baselineComplete?'環境音を30秒測定中（'+Math.floor(s.baselineFrames/10)+'秒）':s.event?'音イベント記録中：録音中':'音イベント記録中：検知待ち';
+ if($('dark').style.display!=='block'){
+  $('stats').textContent='音量 '+(s.db?.toFixed(1)??'—')+' ／ 基準 '+(s.meta.baselineDb?.toFixed(1)??'—')+' ／ しきい値 '+(s.meta.thresholdDb?.toFixed(1)??'—')+' dB';$('meter').value=Math.max(0,Math.min(100,(s.db??-100)+100));
+ }
 }
-registerProcessor('sleep-pcm-recorder',PCMRecorder);
-`;
-
-function addRing(packet) {
-  ring.push(packet);
-  ringFrames += packet.pcm.length;
-  const limit = rate*3;
-  while (ringFrames > limit && ring.length) {
-    const excess = ringFrames-limit;
-    const first = ring[0];
-    if (first.pcm.length <= excess) {
-      ringFrames -= first.pcm.length;
-      ring.shift();
-    } else {
-      first.pcm = first.pcm.slice(excess);
-      first.startFrame += excess;
-      first.startMs += excess/rate*1000;
-      ringFrames -= excess;
-    }
-  }
+async function stopRecording(reason='user_stop'){
+ const s=session;if(!s||s.stopping)return;s.stopping=true;controls();$('status').textContent='最後の音声を保存中（約3秒）';
+ clearInterval(s.timer);clearTimeout(s.dimTimer);const end=elapsed(s);
+ s.meta.endEpoch=Date.now();s.meta.endISO=iso(s.meta.endEpoch);s.meta.elapsed_ms=end;s.meta.state='finalizing';
+ if(!s.baselineComplete){s.meta.baselineComplete=false;finishClip(s,s.baselineClip,end,'baseline_incomplete')}else s.meta.baselineComplete=true;
+ if(s.event){finishClip(s,s.event,end,reason);s.event=null}
+ log(s,'session_end',{note:reason});
+ const pending=[...s.active];await Promise.all(pending.map(c=>c.done));
+ if(s.failed)return;
+ s.meta.state=reason==='user_stop'?'stopped':'interrupted';cleanup(s);
+ try{await flush(s);session=null;controls();$('status').textContent='保存完了。ログ出力・音声出力を選んでください。';await refresh(s.meta.id)}catch(e){saveFailure(s,e)}
 }
-function packet(data) {
-  if (!session || !running) return;
-  const now = elapsed();
-  const a = new Int16Array(data.pcm);
-  const endFrame = data.endFrame;
-  const startFrame = data.startFrame;
-  let endMs = audioOffset + endFrame/rate*1000;
-
-  // The receive clock is diagnostic, not a replacement for sample timing.
-  if (lastReceive && now-lastReceive > 2000) {
-    note('packet-delay',{
-      receive_gap_ms:now-lastReceive,
-      audio_frame:endFrame,
-      context_time:data.contextTime
-    });
-    if (baseline == null && !requestedEnd) {
-      uiError('基準測定中に音声受信が中断しました。停止して再試行してください。');
-      void stop('calibration-interrupted');
-    }
-  }
-  lastReceive = now;
-  frame = endFrame;
-  recentDb = data.db;
-  maxDb = Math.max(maxDb,data.db);
-  const p = {
-    pcm:a, startFrame, endFrame,
-    startMs:endMs-a.length/rate*1000,
-    endMs
-  };
-  addRing(p);
-
-  if (baseline == null) {
-    const remaining = Math.max(0,rate*30-baseClip.frames);
-    const take = Math.min(a.length,remaining);
-    if (take) {
-      append(baseClip,a.slice(0,take),p.startMs+take/rate*1000);
-      baseValues.push(data.db);
-    }
-    if (baseClip.frames >= rate*30) {
-      const sorted = baseValues.slice().sort((x,y)=>x-y);
-      const middle = Math.floor(sorted.length/2);
-      baseline = sorted.length%2 ? sorted[middle] :
-        (sorted[middle-1]+sorted[middle])/2;
-      threshold = baseline+6;
-      session.baseline_db = baseline;
-      session.threshold_db = threshold;
-      session.calibration_complete = true;
-      finishClip(baseClip);
-      baseClip = null;
-      baseValues = [];
-      note('calibration-complete',{baseline_db:baseline,threshold_db:threshold});
-      flushLogs();
-    }
-    return;
-  }
-
-  if (!eventClip && data.db > threshold) {
-    const first = ring[0];
-    eventClip = makeClip(
-      'event', first.startFrame, first.startMs,
-      endFrame,endMs
-    );
-    for (const r of ring) append(eventClip,r.pcm,r.endMs);
-    lowFrames = 0;
-    note('event-start',{clip:eventClip.id,audio_frame:endFrame,db:data.db});
-  } else if (eventClip) {
-    append(eventClip,a,endMs);
-    if (data.db > threshold) lowFrames = 0;
-    else lowFrames += a.length;
-    if (lowFrames >= rate*5) {
-      note('event-end',{clip:eventClip.id,audio_frame:endFrame});
-      finishClip(eventClip);
-      eventClip = null;
-      lowFrames = 0;
-    }
-  }
+async function refresh(selected){
+ if(!db)return;records=await all('sessions');records.sort((a,b)=>b.startEpoch-a.startEpoch);const old=selected||$('sessionSelect').value;$('sessionSelect').replaceChildren();
+ for(const s of records){const o=document.createElement('option');o.value=s.id;o.textContent=new Date(s.startEpoch).toLocaleString('ja-JP')+' ／ '+s.state;$('sessionSelect').append(o)}
+ if(records.some(s=>s.id===old))$('sessionSelect').value=old;sessionInfo();controls();
 }
-
-async function requestWake() {
-  if (!running || document.visibilityState !== 'visible') return;
-  if (!navigator.wakeLock) {
-    $('wake').textContent = 'Wake Lock：非対応。自動消灯に注意してください。';
-    return;
+function sessionInfo(){const s=records.find(x=>x.id===$('sessionSelect').value);$('sessionInfo').textContent=s?'音声 '+(s.audioBytes/MB).toFixed(2)+' MB ／ ログJSON推計 '+(s.logBytes/MB).toFixed(2)+' MB'+(['recording','finalizing'].includes(s.state)?' ／ 未終了：保存済み分を回収できますが音声再生は保証できません':''):'記録はまだありません'}
+const columns=['session','event','epoch_ms','iso_utc','elapsed_ms','duration_seconds','audio_file','mime_type','accel_x','accel_y','accel_z','gravity_x','gravity_y','gravity_z','rotation_alpha','rotation_beta','rotation_gamma','sensor_interval_ms','note'];
+function csvText(logs){const esc=v=>{const t=v==null?'':String(v);return /[",\r\n]/.test(t)?'"'+t.replaceAll('"','""')+'"':t};return columns.join(',')+'\r\n'+logs.map(l=>columns.map(k=>esc(l[k])).join(',')).join('\r\n')+'\r\n'}
+async function clipBlob(c){const parts=await all('parts','clip',c.id);parts.sort((a,b)=>a.seq-b.seq);return new Blob(parts.map(p=>p.blob),{type:c.mime_type})}
+function ready(blob,name){
+ $('player').pause();$('player').removeAttribute('src');$('player').load();
+ if(objectURL)URL.revokeObjectURL(objectURL);prepared=new File([blob],name,{type:blob.type});objectURL=URL.createObjectURL(prepared);
+ $('output').classList.remove('hidden');$('fileInfo').textContent=name+' ／ '+(prepared.size/MB).toFixed(2)+' MB ／ 準備完了'+(canShare(prepared)?'':'（ファイル共有非対応）');
+ $('download').href=objectURL;$('download').download=name;$('open').href=objectURL;
+ const audio=blob.type.startsWith('audio/');$('player').classList.toggle('hidden',!audio);if(audio)$('player').src=objectURL;controls();
+}
+async function exportSession(kind){
+ if(session||busy)return;busy=true;controls();$('error').textContent='';$('status').textContent='出力を準備中';
+ try{
+  const s=await one('sessions',$('sessionSelect').value);if(!s)throw new Error('記録がありません');
+  const clips=await all('clips','session',s.id);clips.sort((a,b)=>a.start_elapsed_ms-b.start_elapsed_ms);
+  $('clipSelect').replaceChildren();for(const c of clips){const o=document.createElement('option');o.value=c.id;o.textContent=c.kind+' ／ '+(c.bytes/MB).toFixed(2)+' MB ／ '+(c.complete?'完了':'未終了');$('clipSelect').append(o)}
+  $('clips').classList.toggle('hidden',!clips.length);
+  if(kind==='audio'){$('status').textContent=clips.length?'音声を選んで準備してください':'保存した音声がありません';return}
+  if(kind==='zip'&&s.audioBytes>80*1024*1024&&!confirm('大きなZIPはiPhoneでメモリ不足になる可能性があります。個別音声出力を推奨します。それでもZIPを準備しますか？'))return;
+  const logs=await all('logs','session',s.id);logs.sort((a,b)=>a.elapsed_ms-b.elapsed_ms);const csv=csvText(logs);$('csvText').value=csv;$('csvDetails').classList.remove('hidden');
+  if(kind==='csv')ready(new Blob(['\ufeff',csv],{type:'text/csv;charset=utf-8'}),'sleep_'+s.id+'_log.csv');
+  else{
+   const entries=[{name:'manifest.json',blob:new Blob([JSON.stringify({schema:SCHEMA,session:s,clips},null,2)])},{name:'log.json',blob:new Blob([JSON.stringify(logs)])},{name:'log.csv',blob:new Blob(['\ufeff',csv])}];
+   for(const c of clips)entries.push({name:c.audio_file,blob:await clipBlob(c)});
+   ready(await zipStore(entries),'sleep_'+s.id+'.zip');
   }
-  if (wake) return;
-  try {
-    const lock = await navigator.wakeLock.request('screen');
-    if (!running || !current()) {await lock.release();return;}
-    wake = lock;
-    $('wake').textContent = 'Wake Lock：取得済み';
-    lock.addEventListener('release',() => {
-      if (wake === lock) wake = null;
-      if (current()) $('wake').textContent = 'Wake Lock：解除された状態';
-    },{once:true});
-  } catch(e) {
-    if (current()) $('wake').textContent = 'Wake Lock：取得失敗 ' + errorText(e);
-    note('wake-error',{message:errorText(e)});
-  }
+  $('status').textContent='準備完了。共有・ファイルに保存を押してください。';
+ }catch(e){error(e);$('status').textContent='出力失敗。端末内の記録は保持しています。'}finally{busy=false;controls()}
 }
-
-async function start() {
-  if (busy() || updating) return;
-  starting = true;
-  requestedEnd = false;
-  saveFailure = null;
-  saveQueue = Promise.resolve();
-  pendingWrites = 0;
-  logs = [];ring = [];ringFrames = 0;baseValues = [];
-  baseline = null;threshold = null;frame = 0;
-  lowFrames = 0;savedBytes = 0;savedParts = 0;
-  motionCount = 0;clipCounter = 0;lastMotion = -Infinity;
-  recentDb = null;maxDb = -Infinity;lastReceive = 0;
-  baseClip = null;eventClip = null;session = null;
-  stopPromise = null;lastGapWarn = 0;
-  $('error').textContent = '';
-  $('state').textContent = '権限・音声処理を準備中';
-  controls();
-
-  // These calls are initiated directly inside the user's tap.
-  let motionPermission;
-  try {
-    const C = window.AudioContext || window.webkitAudioContext;
-    if (!C) throw new Error('AudioContextに対応していません。');
-    ctx = new C();
-    const resumePromise = ctx.resume();
-    motionPermission =
-      typeof DeviceMotionEvent !== 'undefined' &&
-      typeof DeviceMotionEvent.requestPermission === 'function'
-      ? DeviceMotionEvent.requestPermission().catch(()=> 'denied')
-      : Promise.resolve(
-        typeof DeviceMotionEvent === 'undefined' ? 'unsupported' : 'not-required'
-      );
-    await resumePromise;
-    if (!ctx.audioWorklet || typeof AudioWorkletNode === 'undefined') {
-      throw new Error('AudioWorklet非対応です。iOS・Safariを更新して確認してください。');
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      throw new Error('HTTPSで開き、マイク取得に対応したブラウザを使用してください。');
-    }
-    const permission = await motionPermission;
-    $('motion').textContent = '体動権限：' + permission;
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio:{
-        channelCount:{ideal:1},
-        echoCancellation:{ideal:false},
-        noiseSuppression:{ideal:false},
-        autoGainControl:{ideal:false}
-      }
-    });
-    const workletURL = URL.createObjectURL(
-      new Blob([WORKLET],{type:'application/javascript'})
-    );
-    try {await ctx.audioWorklet.addModule(workletURL);}
-    finally {URL.revokeObjectURL(workletURL);}
-
-    rate = ctx.sampleRate;
-    originPerf = performance.now();
-    ctxOrigin = ctx.currentTime;
-    audioOffset = 0;
-    const id = new Date().toISOString().replace(/[:.]/g,'-') + '-' +
-      Math.random().toString(36).slice(2,7);
-    session = {
-      id, version:VERSION, schema:'sleep-event-test-v06',
-      started_iso:new Date().toISOString(),
-      started_epoch_ms:Date.now(),
-      status:'recording',
-      sample_rate:rate,
-      calibration_complete:false,
-      baseline_db:null,threshold_db:null,
-      motion_permission:permission,
-      microphone_settings:stream.getAudioTracks()[0].getSettings(),
-      user_agent:navigator.userAgent,
-      commit:window.__sleepPCMAppliedSHA || null
-    };
-    await write(['sessions'],tx => tx.objectStore('sessions').put({...session}));
-    baseClip = makeClip('baseline',0,0);
-    source = ctx.createMediaStreamSource(stream);
-    node = new AudioWorkletNode(ctx,'sleep-pcm-recorder',{
-      numberOfInputs:1,numberOfOutputs:1,outputChannelCount:[1]
-    });
-    gain = ctx.createGain();
-    gain.gain.value = 0;
-    node.port.onmessage = e => {
-      if (!current()) return;
-      if (e.data.type === 'started') {
-        ctxOrigin = e.data.contextTime;
-        audioOffset = elapsed();
-        if (baseClip) {
-          baseClip.start_elapsed_ms = audioOffset;
-          baseClip.last_elapsed_ms = audioOffset;
-        }
-        note('audio-start',{context_time:ctxOrigin});
-      }
-      if (e.data.type === 'pcm') packet(e.data);
-      if (e.data.type === 'ended' && endAck) endAck();
-    };
-    node.onprocessorerror = () => {
-      uiError('音声処理にエラーが発生しました。');
-      void stop('audio-processor-error');
-    };
-    source.connect(node);
-    node.connect(gain);
-    gain.connect(ctx.destination);
-
-    on(ctx,'statechange',() => {
-      note('audio-context-state',{state:ctx.state});
-      if (running && !stopping && ctx.state !== 'running' && baseline == null) {
-        uiError('基準測定中にAudioContextが中断しました。');
-        void stop('calibration-context-interrupted');
-      }
-    });
-    on(stream.getAudioTracks()[0],'ended',() => {
-      if (running && !stopping) {
-        uiError('マイク入力が終了しました。');
-        void stop('microphone-ended');
-      }
-    });
-    running = true;
-    starting = false;
-    node.port.postMessage('start');
-    note('session-start');
-    flushTimer = setInterval(() => {
-      if (!running || stopping) return;
-      flushClip(baseClip);
-      flushClip(eventClip);
-      flushLogs();
-    },1000);
-    darkTimer = setTimeout(showDark,60000);
-    void requestWake();
-    if (/Android/i.test(navigator.userAgent) && document.documentElement.requestFullscreen) {
-      $('wake').textContent += '／全画面は「暗画面」ボタンから要求できます';
-    }
-    if (navigator.storage?.persist) {
-      navigator.storage.persist().then(granted => {
-        note('persistent-storage',{granted});
-      }).catch(()=>{});
-    }
-    controls();
-    render();
-  } catch(e) {
-    uiError('開始失敗：' + errorText(e));
-    if (stream) stream.getTracks().forEach(t=>t.stop());
-    stream = null;
-    if (ctx) {try {await ctx.close();} catch(_) {}}
-    ctx = null;
-    if (session) {
-      session.status = 'start-error';
-      session.error = errorText(e);
-      try {
-        await write(['sessions'],tx=>tx.objectStore('sessions').put({...session}));
-      } catch(_) {}
-    }
-    starting = false;running = false;
-    $('state').textContent = '開始できませんでした';
-    controls();
-    await listSessions();
-  }
+const crcTable=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xedb88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+async function crcBlob(blob){let c=0xffffffff;for(let at=0;at<blob.size;at+=1024*1024){const b=new Uint8Array(await blob.slice(at,at+1024*1024).arrayBuffer());for(const v of b)c=crcTable[(c^v)&255]^(c>>>8);await sleep(0)}return(c^0xffffffff)>>>0}
+async function zipStore(entries){
+ if(entries.length>65535)throw new Error('ZIP64非対応');const local=[],central=[];let offset=0,centralSize=0;const enc=new TextEncoder();
+ for(const e of entries){const n=enc.encode(e.name),size=e.blob.size;if(size>0xffffffff||offset>0xffffffff)throw new Error('ZIP64非対応');const crc=await crcBlob(e.blob);
+ const l=new Uint8Array(30+n.length),v=new DataView(l.buffer);v.setUint32(0,0x04034b50,true);v.setUint16(4,20,true);v.setUint16(6,0x800,true);v.setUint16(12,33,true);v.setUint32(14,crc,true);v.setUint32(18,size,true);v.setUint32(22,size,true);v.setUint16(26,n.length,true);l.set(n,30);local.push(l,e.blob);
+ const c=new Uint8Array(46+n.length),w=new DataView(c.buffer);w.setUint32(0,0x02014b50,true);w.setUint16(4,20,true);w.setUint16(6,20,true);w.setUint16(8,0x800,true);w.setUint16(14,33,true);w.setUint32(16,crc,true);w.setUint32(20,size,true);w.setUint32(24,size,true);w.setUint16(28,n.length,true);w.setUint32(42,offset,true);c.set(n,46);central.push(c);centralSize+=c.length;offset+=l.length+size;
+ }
+ if(offset+centralSize>0xffffffff)throw new Error('ZIP64非対応');const end=new Uint8Array(22),v=new DataView(end.buffer);v.setUint32(0,0x06054b50,true);v.setUint16(8,entries.length,true);v.setUint16(10,entries.length,true);v.setUint32(12,centralSize,true);v.setUint32(16,offset,true);return new Blob([...local,...central,end],{type:'application/zip'});
 }
-
-function stop(reason='user') {
-  if (stopPromise) return stopPromise;
-  if (!running) return Promise.resolve();
-  stopPromise = performStop(reason);
-  return stopPromise;
+async function fetchLatest(){
+ if(session||busy)return;busy=true;controls();$('updateStatus').textContent='mainの最新コミットを確認中';
+ try{
+  const cb=Date.now();
+  const r=await fetch('https://api.github.com/repos/'+REPO+'/commits/'+BRANCH+'?cb='+cb,{cache:'no-store',signal:AbortSignal.timeout(20000)});if(!r.ok)throw new Error('GitHub API HTTP '+r.status);
+  const data=await r.json(),sha=data.sha;if(!/^[0-9a-f]{40}$/i.test(sha))throw new Error('コミットSHAが不正です');
+  const raw='https://raw.githubusercontent.com/'+REPO+'/'+sha+'/'+FILE+'?cb='+cb;
+  const response=await fetch(raw,{cache:'no-store',signal:AbortSignal.timeout(20000)});if(!response.ok)throw new Error('HTML取得 HTTP '+response.status+'。'+FILE+'をmainに配置してください。');
+  const text=await response.text(),doc=new DOMParser().parseFromString(text,'text/html'),root=doc.documentElement;
+  const next=Number(root.dataset.sleepVersion);
+  if(root.dataset.sleepApp!==APP||!Number.isInteger(next)||next<=VERSION)throw new Error('別アプリ・同じ版・旧版は適用しません。取得版：'+next);
+  if(!doc.querySelector('script'))throw new Error('実行コードがありません');
+  if(!confirm('v'+next+'（'+sha.slice(0,7)+'）を取得しました。適用しますか？')){$('updateStatus').textContent='適用を取り消しました';return}
+  // srcdoc inherits this HTTPS origin, so IndexedDB remains on the Pages origin.
+  // No document.write, Blob navigation, remote audio upload, or unvalidated HTML.
+  doc.querySelectorAll('base').forEach(x=>x.remove());const base=doc.createElement('base');base.href=new URL('.',location.href).href;doc.head.prepend(base);
+  root.dataset.sleepCommit=sha;
+  const frame=document.createElement('iframe');frame.title='最新版 睡眠記録';frame.allow='microphone; fullscreen; screen-wake-lock; accelerometer; gyroscope; clipboard-write; web-share';
+  frame.style.cssText='position:fixed;inset:0;width:100%;height:100%;border:0;background:#090d14;z-index:1000';
+  frame.srcdoc='<!doctype html>\n'+root.outerHTML;
+  // Reuse the outer host on subsequent updates; do not accumulate nested frames.
+  const host=window.parent!==window&&window.frameElement?.id==='sleep-update-frame'?window.parent:window;
+  const old=host.document.getElementById('sleep-update-frame');frame.id='sleep-update-frame';
+  if(old)old.replaceWith(frame);else{document.querySelector('main').hidden=true;document.body.append(frame)}
+ }catch(e){$('updateStatus').textContent='更新せず現在版を維持：'+e.message}
+ finally{busy=false;controls()}
 }
-async function performStop(reason) {
-  stopping = true;
-  requestedEnd = true;
-  controls();
-  $('state').textContent = '残りの音声を保存中';
-  clearInterval(flushTimer);
-  clearTimeout(darkTimer);
-  hideDark();
-
-  if (node) {
-    let acknowledged = false;
-    await new Promise(resolve => {
-      const timer = setTimeout(resolve,1500);
-      endAck = () => {
-        acknowledged = true;
-        clearTimeout(timer);
-        resolve();
-      };
-      try {node.port.postMessage('stop');}
-      catch(_) {clearTimeout(timer);resolve();}
-    });
-    endAck = null;
-    if (!acknowledged) note('audio-final-flush-unconfirmed');
-  }
-
-  running = false;
-  if (baseClip) {
-    finishClip(baseClip,'partial');
-    baseClip = null;
-  }
-  if (eventClip) {
-    finishClip(eventClip,reason === 'user' ? 'user-ended' : 'interrupted');
-    eventClip = null;
-  }
-  note('session-end',{reason});
-  session.status = saveFailure ? 'storage-error' :
-    reason === 'user' ? 'stopped' : 'interrupted';
-  session.ended_iso = new Date().toISOString();
-  session.elapsed_ms = elapsed();
-  session.end_reason = reason;
-  if (saveFailure) session.error = errorText(saveFailure);
-  flushLogs();
-  await saveQueue;
-
-  if (!saveFailure) {
-    session.saved_bytes = savedBytes;
-    session.saved_parts = savedParts;
-    try {
-      await write(['sessions'],tx=>tx.objectStore('sessions').put({...session}));
-    } catch(e) {
-      saveFailure = e;
-      uiError('最終情報の保存失敗：' + errorText(e));
-    }
-  }
-  try {source?.disconnect();node?.disconnect();gain?.disconnect();}
-  catch(_) {}
-  if (stream) stream.getTracks().forEach(t=>t.stop());
-  stream = null;
-  if (ctx) {try {await ctx.close();} catch(_) {}}
-  ctx = null;source = null;node = null;gain = null;
-  if (wake) {try {await wake.release();} catch(_) {}wake = null;}
-  ring = [];ringFrames = 0;baseValues = [];
-  stopping = false;
-  $('state').textContent = saveFailure
-    ? '保存エラーで停止。保存済み分を一覧から回収してください。'
-    : '停止・保存完了';
-  $('wake').textContent = 'Wake Lock：停止時に解除';
-  await listSessions(session.id);
-  render();
-  controls();
-}
-
-function render() {
-  if (!current()) return;
-  if (running && !stopping) {
-    $('state').textContent = baseline == null
-      ? '環境音測定中 ' + Math.min(30,Math.floor(frame/rate)) + ' / 30秒'
-      : eventClip ? '音イベント記録中' : '音イベント待機中';
-    $('baseline').textContent = baseline == null
-      ? '基準：測定中'
-      : '基準 ' + baseline.toFixed(1) + ' dB ／ しきい値 ' +
-        threshold.toFixed(1) + ' dB';
-    if (!$('dark').classList.contains('on')) {
-      $('level').style.width = Math.max(0,Math.min(100,(recentDb+90)/90*100))+'%';
-      $('input').textContent = '入力：' +
-        (recentDb == null ? '準備中' : recentDb.toFixed(1)+' dB') +
-        ' ／ ' + rate + ' Hz ／ PCM';
-    }
-    if (lastReceive && elapsed()-lastReceive > 3000 &&
-        elapsed()-lastGapWarn > 10000) {
-      lastGapWarn = elapsed();
-      note('audio-no-recent-packet',{gap_ms:elapsed()-lastReceive});
-      $('input').textContent = '音声の受信が止まっています。OS中断の可能性があります。';
-    }
-  }
-  $('storage').textContent = '保存済みPCM：' +
-    (savedBytes/1024/1024).toFixed(2) + ' MB ／ ' +
-    savedParts + '部分 ／ 保存待ち ' + pendingWrites;
-  if (session) {
-    $('motion').textContent = '体動：' + motionCount +
-      '件 ／ 権限 ' + session.motion_permission +
-      '（未取得を0加速度として補完しません）';
-  }
-}
-
-on(window,'devicemotion',e => {
-  if (!running || stopping || !session) return;
-  const t = elapsed();
-  if (t-lastMotion < 100) return;
-  lastMotion = t;
-  const clean = o => o ? {
-    x:Number.isFinite(o.x)?o.x:null,
-    y:Number.isFinite(o.y)?o.y:null,
-    z:Number.isFinite(o.z)?o.z:null
-  } : null;
-  logs.push({
-    session:session.id,type:'motion',elapsed_ms:t,
-    acceleration:clean(e.acceleration),
-    acceleration_including_gravity:clean(e.accelerationIncludingGravity),
-    interval_ms:Number.isFinite(e.interval)?e.interval:null
-  });
-  motionCount++;
-});
-
-on(document,'visibilitychange',() => {
-  if (!running) return;
-  note('visibility',{state:document.visibilityState});
-  flushClip(baseClip);flushClip(eventClip);flushLogs();
-  if (document.visibilityState === 'visible') {
-    void requestWake();
-    if (ctx?.state === 'suspended') {
-      ctx.resume().catch(e=>note('resume-error',{message:errorText(e)}));
-    }
-  }
-  // Do not stop voluntarily on visibilitychange.
-});
-on(window,'pagehide',() => {
-  if (!running) return;
-  note('pagehide');
-  flushClip(baseClip);flushClip(eventClip);flushLogs();
-  // Browser shutdown may terminate these asynchronous writes.
-});
-on(window,'pageshow',e => {
-  if (e.persisted && running) {
-    note('pageshow-restored');
-    void requestWake();
-  }
-});
-
-function showDark() {
-  if (running) $('dark').classList.add('on');
-}
-function hideDark() {
-  clearTimeout(holdTimer);
-  clearTimeout(clockTimer);
-  $('dark').classList.remove('on');
-  $('clock').style.visibility = 'hidden';
-}
-function showClock() {
-  $('clock').textContent = new Date().toLocaleTimeString('ja-JP',{
-    hour:'2-digit',minute:'2-digit',second:'2-digit'
-  });
-  $('clock').style.visibility = 'visible';
-  clearTimeout(clockTimer);
-  clockTimer = setTimeout(()=>{$('clock').style.visibility='hidden';},5000);
-}
-on($('dark'),'pointerdown',e => {
-  e.preventDefault();
-  try {$('dark').setPointerCapture(e.pointerId);} catch(_) {}
-  showClock();
-  clearTimeout(holdTimer);
-  holdTimer = setTimeout(hideDark,800);
-});
-on($('dark'),'pointerup',()=>clearTimeout(holdTimer));
-on($('dark'),'pointercancel',()=>clearTimeout(holdTimer));
-on($('dark'),'contextmenu',e=>e.preventDefault());
-on($('black'),'click',() => {
-  showDark();
-  if (/Android/i.test(navigator.userAgent) &&
-      document.documentElement.requestFullscreen && !document.fullscreenElement) {
-    document.documentElement.requestFullscreen().catch(()=>{});
-  }
-});
-
-async function listSessions(selectId) {
-  if (!db || !current()) return;
-  const all = await readAll('sessions');
-  if (!current()) return;
-  all.sort((a,b)=>b.started_epoch_ms-a.started_epoch_ms);
-  const select = $('sessions');
-  const old = selectId || select.value;
-  select.replaceChildren();
-  for (const s of all) {
-    const option = document.createElement('option');
-    option.value = s.id;
-    option.textContent =
-      new Date(s.started_epoch_ms).toLocaleString('ja-JP') +
-      ' ／ ' + (s.status === 'recording' && !running
-        ? '未正常終了・保存済み分あり' : s.status);
-    select.append(option);
-  }
-  if (all.some(s=>s.id===old)) select.value = old;
-  controls();
-}
-
-function wavHeader(bytes,sampleRate) {
-  if (bytes > 0xffffffff-36) throw new Error('WAVが4GB制限を超えています。');
-  const a = new ArrayBuffer(44),v = new DataView(a);
-  const str=(o,s)=>{for(let i=0;i<s.length;i++)v.setUint8(o+i,s.charCodeAt(i));};
-  str(0,'RIFF');v.setUint32(4,36+bytes,true);str(8,'WAVE');
-  str(12,'fmt ');v.setUint32(16,16,true);v.setUint16(20,1,true);
-  v.setUint16(22,1,true);v.setUint32(24,sampleRate,true);
-  v.setUint32(28,sampleRate*2,true);v.setUint16(32,2,true);
-  v.setUint16(34,16,true);str(36,'data');v.setUint32(40,bytes,true);
-  return a;
-}
-function littleEndianPCM(buffer) {
-  const values = new Int16Array(buffer);
-  const out = new ArrayBuffer(buffer.byteLength);
-  const view = new DataView(out);
-  for (let i=0;i<values.length;i++) view.setInt16(i*2,values[i],true);
-  return out;
-}
-async function clipBlob(c) {
-  const parts = await readAll('parts','clip',c.key);
-  parts.sort((a,b)=>a.sequence-b.sequence);
-  const buffers = parts.map(p=>littleEndianPCM(p.pcm));
-  const bytes = buffers.reduce((n,b)=>n+b.byteLength,0);
-  return {
-    blob:new Blob([wavHeader(bytes,c.rate),...buffers],{type:'audio/wav'}),
-    frames:bytes/2
-  };
-}
-
-const CRC_TABLE = (() => {
-  const a = new Uint32Array(256);
-  for (let n=0;n<256;n++) {
-    let c=n;
-    for(let k=0;k<8;k++) c=(c&1)?0xedb88320^(c>>>1):c>>>1;
-    a[n]=c>>>0;
-  }
-  return a;
-})();
-async function crcBlob(blob) {
-  let crc = 0xffffffff;
-  const reader = blob.stream().getReader();
-  while (true) {
-    const {value,done} = await reader.read();
-    if (done) break;
-    for (let i=0;i<value.length;i++) {
-      crc = CRC_TABLE[(crc^value[i])&255]^(crc>>>8);
-    }
-  }
-  return (crc^0xffffffff)>>>0;
-}
-async function zipStore(files) {
-  if (files.length > 65535) throw new Error('ZIP64が必要なファイル数です。');
-  const encoder = new TextEncoder();
-  const body=[],central=[];
-  let offset=0,centralSize=0;
-  for(const f of files) {
-    const name=encoder.encode(f.name);
-    const size=f.blob.size;
-    if(size>0xffffffff || offset>0xffffffff) {
-      throw new Error('ZIP64非対応のため4GB超のZIPは作成できません。');
-    }
-    const crc=await crcBlob(f.blob);
-    const local=new Uint8Array(30+name.length);
-    const lv=new DataView(local.buffer);
-    lv.setUint32(0,0x04034b50,true);
-    lv.setUint16(4,20,true);lv.setUint16(6,0x0800,true);
-    lv.setUint16(8,0,true);
-    lv.setUint16(12,0x0021,true);
-    lv.setUint32(14,crc,true);lv.setUint32(18,size,true);
-    lv.setUint32(22,size,true);lv.setUint16(26,name.length,true);
-    local.set(name,30);
-    body.push(local,f.blob);
-
-    const cd=new Uint8Array(46+name.length);
-    const cv=new DataView(cd.buffer);
-    cv.setUint32(0,0x02014b50,true);
-    cv.setUint16(4,20,true);cv.setUint16(6,20,true);
-    cv.setUint16(8,0x0800,true);cv.setUint16(10,0,true);
-    cv.setUint16(14,0x0021,true);
-    cv.setUint32(16,crc,true);cv.setUint32(20,size,true);
-    cv.setUint32(24,size,true);cv.setUint16(28,name.length,true);
-    cv.setUint32(42,offset,true);cd.set(name,46);
-    central.push(cd);
-    centralSize += cd.length;
-    offset += local.length+size;
-  }
-  if(offset+centralSize+22>0xffffffff) {
-    throw new Error('ZIP64が必要なサイズです。');
-  }
-  const end=new Uint8Array(22),ev=new DataView(end.buffer);
-  ev.setUint32(0,0x06054b50,true);
-  ev.setUint16(8,files.length,true);ev.setUint16(10,files.length,true);
-  ev.setUint32(12,centralSize,true);ev.setUint32(16,offset,true);
-  return new Blob([...body,...central,end],{type:'application/zip'});
-}
-function objectURL(blob) {
-  const u=URL.createObjectURL(blob);
-  urls.push(u);
-  return u;
-}
-function clearDownloads() {
-  for(const u of urls.splice(0)) URL.revokeObjectURL(u);
-  $('downloads').replaceChildren();
-  $('clips').replaceChildren();
-}
-function downloadLink(blob,name,label,parent) {
-  const a=document.createElement('a');
-  a.href=objectURL(blob);a.download=name;
-  a.textContent=label;a.className='save';
-  parent.append(a);
-}
-function csv(rows) {
-  const cols=[
-    'type','elapsed_ms','max_db','audio_frame',
-    'accel_x','accel_y','accel_z',
-    'gravity_x','gravity_y','gravity_z'
-  ];
-  const quote=v=>'"'+String(v??'').replace(/"/g,'""')+'"';
-  const out=[cols.map(quote).join(',')];
-  for(const r of rows) {
-    const a=r.acceleration || {},g=r.acceleration_including_gravity || {};
-    const values=[
-      r.type,r.elapsed_ms,r.max_db,r.audio_frame,
-      a.x,a.y,a.z,g.x,g.y,g.z
-    ];
-    out.push(values.map(quote).join(','));
-  }
-  return '\ufeff'+out.join('\r\n');
-}
-async function exportZIP() {
-  if (busy() || updating || !$('sessions').value) return;
-  exporting=true;controls();clearDownloads();
-  try {
-    const id=$('sessions').value;
-    const s=await readOne('sessions',id);
-    if (!s) throw new Error('セッションが見つかりません。');
-    const c=await readAll('clips','session',id);
-    const l=await readAll('logs','session',id);
-    c.sort((a,b)=>a.start_frame-b.start_frame);
-    l.sort((a,b)=>a.elapsed_ms-b.elapsed_ms);
-    const files=[],metadata=[];
-    $('exportState').textContent='保存済み音声を読み出しています…';
-
-    for(const clip of c) {
-      const result=await clipBlob(clip);
-      const record={
-        ...clip,
-        frames:result.frames,
-        duration_seconds:result.frames/clip.rate,
-        start_iso:new Date(s.started_epoch_ms+clip.start_elapsed_ms).toISOString(),
-        detection_iso:clip.detection_elapsed_ms==null ? null :
-          new Date(s.started_epoch_ms+clip.detection_elapsed_ms).toISOString(),
-        end_iso:new Date(s.started_epoch_ms+clip.end_elapsed_ms).toISOString(),
-        recovered:clip.status==='recording'
-      };
-      metadata.push(record);
-      files.push({name:clip.file,blob:result.blob});
-
-      const box=document.createElement('div');
-      box.className='clip';
-      const text=document.createElement('p');
-      text.className='small';
-      text.textContent=clip.id+' ／ '+record.duration_seconds.toFixed(2)+
-        '秒 ／ '+(record.recovered?'中断前の保存済み分':clip.status);
-      box.append(text);
-      const player=document.createElement('audio');
-      player.controls=true;player.preload='none';
-      player.src=objectURL(result.blob);
-      box.append(player);
-      downloadLink(result.blob,clip.id+'.wav','WAVを保存',box);
-      $('clips').append(box);
-    }
-
-    const manifest={
-      schema:'sleep-event-test-v06',
-      zip_method:'STORE',
-      audio_format:'WAV PCM signed 16-bit little-endian mono',
-      calibration_seconds:30,threshold_delta_db:6,
-      preroll_seconds:3,tail_seconds:5,
-      session:s,clips:metadata,
-      recovery_note:s.status==='recording'
-        ? '正常停止されていません。保存完了済み分のみ。未保存音声は復元できません。'
-        : null,
-      compatibility:'旧zip-store-v1および既存解析アプリとの完全互換は未確認'
-    };
-    const json=(o)=>new Blob([JSON.stringify(o,null,2)],{type:'application/json'});
-    files.unshift(
-      {name:'manifest.json',blob:json(manifest)},
-      {name:'log.json',blob:json({session:s,clips:metadata,records:l})},
-      {name:'log.csv',blob:new Blob([csv(l)],{type:'text/csv;charset=utf-8'})}
-    );
-    $('exportState').textContent='ZIPを作成しています…';
-    const zip=await zipStore(files);
-    downloadLink(zip,'sleep-'+id+'.zip','ZIPを保存',$('downloads'));
-    $('exportState').textContent='ZIP完成：'+(zip.size/1024/1024).toFixed(2)+
-      ' MB。「ZIPを保存」をタップしてください。音声 '+metadata.length+'件。';
-  } catch(e) {
-    uiError('出力失敗：'+errorText(e));
-    $('exportState').textContent='出力に失敗しました。端末内の元記録は削除していません。';
-  } finally {
-    exporting=false;controls();
-  }
-}
-
-function configFields() {
-  $('repo').value=config.repo;
-  $('branch').value=config.branch;
-  $('path').value=config.path;
-  $('autoUpdate').checked=config.auto;
-}
-function runtime() {
-  $('runtime').textContent='実行版：v06 ／ コミット：'+
-    (window.__sleepPCMAppliedSHA
-      ? window.__sleepPCMAppliedSHA.slice(0,12)+'（動的適用）'
-      : '配信HTML・未照合');
-}
-async function fetchText(url) {
-  const ac=new AbortController();
-  const timer=setTimeout(()=>ac.abort(),15000);
-  try {
-    const response=await fetch(url,{
-      cache:'no-store',signal:ac.signal,
-      headers:{Accept:'application/vnd.github+json'}
-    });
-    if(!response.ok) throw new Error('HTTP '+response.status);
-    return await response.text();
-  } finally {clearTimeout(timer);}
-}
-async function update(manual=false) {
-  if (busy() || updating || !current()) return;
-  updating=true;controls();
-  try {
-    if (manual) {
-      config={
-        repo:$('repo').value.trim(),
-        branch:$('branch').value.trim(),
-        path:$('path').value.trim().replace(/^\/+/,''),
-        auto:$('autoUpdate').checked
-      };
-      if(!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(config.repo)) {
-        throw new Error('リポジトリは所有者/名前で指定してください。');
-      }
-      if(!config.branch || !config.path ||
-         config.path.split('/').some(x=>x==='..') ||
-         !/\.html$/i.test(config.path)) {
-        throw new Error('ブランチとHTMLの相対パスを確認してください。');
-      }
-      localStorage.setItem(CONFIG_KEY,JSON.stringify(config));
-    }
-    $('updateState').textContent='GitHubの最新コミットを確認中…';
-    const base='https://api.github.com/repos/'+config.repo;
-    const commit=JSON.parse(await fetchText(
-      base+'/commits/'+encodeURIComponent(config.branch)+'?cb='+Date.now()
-    ));
-    if (!current() || busy()) return;
-    const sha=commit.sha;
-    if(!/^[a-f0-9]{40}$/i.test(sha||'')) throw new Error('コミットSHAが不正です。');
-    if(window.__sleepPCMAppliedSHA===sha &&
-       window.__sleepPCMAppliedPath===config.path) {
-      $('updateState').textContent='最新コミットを適用済み：'+sha.slice(0,12);
-      return;
-    }
-    const path=config.path.split('/').map(encodeURIComponent).join('/');
-    const url='https://raw.githubusercontent.com/'+config.repo+'/'+sha+'/'+
-      path+'?cb='+Date.now();
-    const text=await fetchText(url);
-    if(!current() || busy()) return;
-    const doc=new DOMParser().parseFromString(text,'text/html');
-    const id=doc.querySelector('meta[name="sleep-app-id"]')?.content;
-    const version=Number(doc.querySelector('meta[name="sleep-app-version"]')?.content);
-    if(id!==APP_ID || !Number.isInteger(version) || version<VERSION) {
-      throw new Error('別アプリまたは旧版のため適用しません。');
-    }
-    const scripts=[...doc.scripts];
-    if(!scripts.length || scripts.some(s=>s.src)) {
-      throw new Error('この更新方式は自己完結したインラインHTMLのみ対応します。');
-    }
-    $('updateState').textContent='最新コミットを適用します：'+sha.slice(0,12);
-    clearInterval(uiTimer);
-    controller.abort();
-    for(const u of urls) URL.revokeObjectURL(u);
-    db?.close();
-    window.__sleepPCMAppliedSHA=sha;
-    window.__sleepPCMAppliedPath=config.path;
-
-    // Parsed scripts are inert. Replace them explicitly after replacing the DOM.
-    document.documentElement.innerHTML=doc.documentElement.innerHTML;
-    for(const old of [...document.scripts]) {
-      const replacement=document.createElement('script');
-      for(const attr of old.attributes) {
-        replacement.setAttribute(attr.name,attr.value);
-      }
-      replacement.textContent=old.textContent;
-      old.replaceWith(replacement);
-    }
-  } catch(e) {
-    if(current()) $('updateState').textContent=
-      '更新できませんでした。現在版を維持：'+errorText(e)+
-      '。テストHTML未配置時の404は想定内です。';
-  } finally {
-    if(current()) {updating=false;controls();}
-  }
-}
-
-on($('start'),'click',()=>void start());
-on($('stop'),'click',()=>void stop('user'));
-   on($('start'),'click',()=>void start());
-  on($('stop'),'click',()=>void stop('user'));
-  on($('export'),'click',()=>void exportZIP());
-  on($('reload'),'click',()=>void listSessions());
-  on($('sessions'),'change',controls);
-  on($('update'),'click',()=>void update(true));
-
-  async function init() {
-    try {
-      try {
-        const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null');
-        if (saved) config = {...config, ...saved};
-      } catch (_) {}
-
-      configFields();
-      runtime();
-
-      db = await openDB();
-      await listSessions();
-
-      $('state').textContent = '開始できます';
-      uiTimer = setInterval(render, 1000);
-      controls();
-
-      if (config.auto) void update();
-    } catch (e) {
-      $('state').textContent = '起動失敗';
-      uiError(e);
-      controls();
-    }
-  }
-
-  void init();
-  })();
-  </script>
-  </body>
-  </html>
+$('start').onclick=startRecording;$('stop').onclick=()=>stopRecording().catch(error);
+$('dim').onclick=()=>{$('dark').style.display='block'};
+let press,clockTimer,longPress=false;
+$('dark').onpointerdown=e=>{e.preventDefault();longPress=false;press=setTimeout(()=>{longPress=true;$('dark').style.display='none'},800)};
+$('dark').onpointerup=e=>{e.preventDefault();clearTimeout(press);if(longPress)return;$('clock').textContent=new Date().toLocaleTimeString('ja-JP',{hour:'2-digit',minute:'2-digit'});clearTimeout(clockTimer);clockTimer=setTimeout(()=>$('clock').textContent='',5000)};
+$('dark').onpointercancel=()=>clearTimeout(press);
+$('csv').onclick=()=>exportSession('csv');$('audioList').onclick=()=>exportSession('audio');$('zip').onclick=()=>exportSession('zip');
+$('refresh').onclick=()=>refresh().catch(error);$('sessionSelect').onchange=()=>{sessionInfo();$('clips').classList.add('hidden')};
+$('prepareAudio').onclick=async()=>{if(session||busy)return;busy=true;controls();try{const c=await one('clips',$('clipSelect').value);if(!c)throw new Error('音声がありません');ready(await clipBlob(c),c.audio_file.split('/').pop())}catch(e){error(e)}finally{busy=false;controls()}};
+$('share').onclick=()=>{if(!prepared||session||busy)return;navigator.share({files:[prepared]}).catch(e=>{if(e.name!=='AbortError')error(e)})};
+$('copy').onclick=()=>{navigator.clipboard.writeText($('csvText').value).then(()=>$('fileInfo').textContent='CSVをコピーしました').catch(()=>{$('csvDetails').open=true;$('csvText').focus();$('csvText').select();error(new Error('表示したCSVを手動でコピーしてください'))})};
+$('update').onclick=fetchLatest;
+$('reload').onclick=()=>{if(session||busy)return;const host=window.parent!==window&&window.frameElement?.id==='sleep-update-frame'?window.parent:window;const u=new URL(host.location.href);u.searchParams.set('cb',Date.now());host.location.replace(u.href)};
+document.addEventListener('visibilitychange',()=>{const s=session;if(!s||s.stopping)return;log(s,'visibility',{note:document.visibilityState});flush(s).catch(()=>{});if(document.visibilityState==='visible')requestWake()});
+window.addEventListener('pagehide',()=>{if(session){log(session,'pagehide',{note:'未保存分と未完結音声の回収は保証しない'});flush(session).catch(()=>{})}});
+(async()=>{try{db=await database();db.onversionchange=()=>{db.close();error(new Error('保存DB変更。停止後に再読込してください'))};await refresh();$('status').textContent='準備完了。最初の30秒は静かにしてください。';const sha=document.documentElement.dataset.sleepCommit||new URL(location.href).searchParams.get('sha');$('version').textContent='実行版 v02 ／ '+(sha?'適用コミット '+sha:'コミット未固定');controls()}catch(e){error(e);$('status').textContent='保存できないため開始しません'}})();
+</script></body></html>
