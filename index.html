@@ -1188,4 +1188,40 @@ async function update(manual=false) {
 
 on($('start'),'click',()=>void start());
 on($('stop'),'click',()=>void stop('user'));
- 
+   on($('start'),'click',()=>void start());
+  on($('stop'),'click',()=>void stop('user'));
+  on($('export'),'click',()=>void exportZIP());
+  on($('reload'),'click',()=>void listSessions());
+  on($('sessions'),'change',controls);
+  on($('update'),'click',()=>void update(true));
+
+  async function init() {
+    try {
+      try {
+        const saved = JSON.parse(localStorage.getItem(CONFIG_KEY) || 'null');
+        if (saved) config = {...config, ...saved};
+      } catch (_) {}
+
+      configFields();
+      runtime();
+
+      db = await openDB();
+      await listSessions();
+
+      $('state').textContent = '開始できます';
+      uiTimer = setInterval(render, 1000);
+      controls();
+
+      if (config.auto) void update();
+    } catch (e) {
+      $('state').textContent = '起動失敗';
+      uiError(e);
+      controls();
+    }
+  }
+
+  void init();
+  })();
+  </script>
+  </body>
+  </html>
