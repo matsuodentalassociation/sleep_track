@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="ja" data-somnolog-version="004">
+<html lang="ja" data-somnolog-version="005">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SomnoLog v004</title>
+  <title>SomnoLog v005</title>
   <style>
     :root {
       color-scheme: dark;
@@ -281,6 +281,13 @@
         <button id="motion-permission" class="permission" type="button" data-permission="motion">モーションセンサーを許可</button>
       </div>
     </section>
+    <section class="meters" aria-label="匿名ID">
+      <label for="anonymous-id" class="label">匿名ID（氏名は入力しない）</label>
+      <input id="anonymous-id" type="text" maxlength="64" autocomplete="off"
+        spellcheck="false" pattern="[A-Za-z0-9_-]{6,64}"
+        style="width:100%;padding:12px;margin-top:10px;border:1px solid #45576a;border-radius:10px;background:#101923;color:#f0eee6">
+      <p class="note">自動IDまたは受付発行ID。変更は次の記録から適用します。</p>
+    </section>
     <section class="controls" aria-label="記録操作">
       <div class="row">
         <button id="start" class="control start" type="button" disabled>記録開始</button>
@@ -290,7 +297,7 @@
       <button id="capture-help-button" class="usage" type="button" aria-haspopup="dialog">使い方を見る</button>
     </section>
     <section aria-label="アプリ更新">
-      <p class="note">SomnoLog v004 · 相対dB／100ms窓 · 権限取得改修 · 実機未検証</p>
+      <p class="note">SomnoLog v005 · 独立WAV／音声対応表／分冊ZIP · 実機未検証</p>
       <button id="app-reload" class="usage" type="button">キャッシュ回避で再読込</button>
       <button id="app-update" class="usage" type="button" style="margin-top:12px">GitHub最新版を取得・適用</button>
       <p id="app-update-status" class="note" role="status"></p>
@@ -383,7 +390,7 @@
       <li><strong>記録開始後10秒は静かにする</strong><br>最初の10秒間の100ms窓から環境音の中央値を取得します。その後、基準より＋10dB以上の窓を検出します。最初の10秒は音の検出時間に加算しません。基準取得中に欠測・無信号があった場合は停止し、再記録を求めます。</li>
       <li><strong>暗い画面で時刻を見る</strong><br>タップで明るく表示し、約3秒後に真っ黒になります。再タップで時計を表示します。1.5秒長押し、戻るボタン、Escapeで記録画面へ戻れます。録音停止は停止ボタンで行います。画面ロックや別アプリへの切替で録音が中断する場合があります。</li>
     </ol>
-    <p class="note">相対差で補正できるのは一定の入力感度差です。端末のAGC・ノイズ処理・飽和まで同一化するものではありません。録音は連続録音です。</p>
+    <p class="note">相対差で補正できるのは一定の入力感度差です。端末のAGC・ノイズ処理・飽和まで同一化するものではありません。音声は同じ入力から約10秒の独立WAVとして保存します。16kHz・モノラル・16bit。停止時100ms未満の端数は未収録です。</p>
     <form method="dialog"><button class="close">閉じる</button></form>
   </dialog>
 
@@ -400,17 +407,17 @@
 
   <dialog id="share-dialog" class="flow-dialog" aria-labelledby="share-title">
     <h2 id="share-title">ログを医師と共有</h2>
-    <p>選択した記録を、1つのZIPファイルにまとめて共有します。</p>
+    <p>選択記録をZIPで共有します。直接保存APIがない場合は原則約20分の分冊を順番に保存・共有します。</p>
     <div class="zip-summary">
       <strong id="zip-period"></strong>
       <p id="zip-count" style="margin:0 0 10px"></p>
       <div id="zip-name" class="filename"></div>
     </div>
-    <p><strong>ZIPにまとめるデータ（形式 v1.1.0）</strong></p>
+    <p><strong>ZIPにまとめるデータ（zip-store-v1／スキーマ案）</strong></p>
     <ul>
       <li>各記録の開始・停止日時、記録時間、環境音基準</li>
-      <li>RMS・dBFS・相対dB・体動の時系列データ（CSV）</li>
-      <li>記録一覧（CSV）と、保存されている連続録音音声</li>
+      <li>RMS・dBFS・相対dB・体動・欠測の時系列データ（JSON）</li>
+      <li>音声対応表と約10秒の独立WAV。旧録音は依存チャンクとして区別</li>
     </ul>
     <p class="warning">音声は端末内に元音声が残っている場合のみ添付できます。波形データから音声を復元することはできません。</p>
     <p class="note">※ZIPは端末上で作成します。SomnoGraph互換性・医師への到達は未確認です。</p>
@@ -432,9 +439,9 @@
 "use strict";
 (() => {
   /*
-   * SomnoLog v004
-   * 正本：SomnoLog v004.html.html
-   * 音声：連続録音／10秒保存チャンク
+   * SomnoLog v005
+   * 正本：SomnoLog v004.html / 修正版：SomnoLog v005.html
+   * 音声：AudioWorklet入力／16kHz PCM／約10秒の独立WAV
    * 検出：AudioWorkletの100ms非重複窓／開始10秒中央値／相対+10dB
    * dBFSは校正された音圧ではない。実機・終夜動作は未検証。
    */
@@ -469,7 +476,7 @@
   }
 
   const CONFIG = Object.freeze({
-    formatVersion: "1.1.0", sampleMs: 100, flushMs: 5000,
+    formatVersion: "zip-store-v1", pcmSampleRate: 16000, sampleMs: 100, flushMs: 5000,
     audioChunkMs: 10000, baselineMs: 10000, soundDeltaDb: 10.0,
     motionThreshold: 0.35, motionFreshMs: 1500, gravityAlpha: 0.9,
     maxPendingWrites: 8, staleMs: 120000,
@@ -487,7 +494,7 @@
   let mode = "single", selected = today, rangeStart = null, rangeEnd = null;
   let records = [], db = null, state = "boot", session = null, currentResult = null;
   let micStream = null, audioContext = null, micSource = null, soundNode = null;
-  let recorder = null, flushTimer = null, clockHideTimer = null, longTimer = null;
+  let flushTimer = null, clockHideTimer = null, longTimer = null;
   let lastMotion = null, gravity = null, motionRequested = false;
   let rows = [], chunkSeq = 0, batchSeq = 0, pendingWrites = 0;
   let queue = Promise.resolve(), writeError = null, audioError = null;
@@ -495,11 +502,106 @@
   let exporting = false, updating = false;
   let shareRecords = [], shareReturn = "calendar", preparedShare = null;
   let liveSound = [], liveMotion = [], animation = 0;
-  let audioLastEvent = 0, recorderDone = null;
+  
   let latestSoundWindow = null, soundWindowToken = null, previewDb = [];
   let soundStopResolve = null, soundAudioOrigin = null, soundLastAudioEnd = null;
   let soundCalibration = { values: [], elapsedMs: 0, baselineDb: null, invalid: false, failed: false };
-  const ready = { microphone: false, motion: false };
+  let pcmParts = [], pcmFrames = 0, pcmStartOffset = 0, pcmSourceStart = 0, pcmExpectedEnd = null;
+let exportPlans = [], exportPlanIndex = 0;
+function initializePatientId() {
+  const input = el("anonymous-id");
+  let saved = "";
+  try { saved = localStorage.getItem("SomnoLog-anonymous-id") || ""; } catch {}
+  input.value = /^[A-Za-z0-9_-]{6,64}$/.test(saved) ?
+    saved : "anon-" + crypto.randomUUID();
+}
+
+function readPatientId() {
+  const value = el("anonymous-id").value.trim();
+  if (!/^[A-Za-z0-9_-]{6,64}$/.test(value))
+    throw new Error("匿名IDは半角英数字・ハイフン・下線の6〜64文字で入力してください。氏名は入力しないでください。");
+  try { localStorage.setItem("SomnoLog-anonymous-id", value); } catch {}
+  return value;
+}
+
+function makeWav(parts, frames) {
+  const bytes = new Uint8Array(44 + frames * 2);
+  const v = new DataView(bytes.buffer);
+  const ascii = (at, text) => {
+    for (let i = 0; i < text.length; i++) bytes[at + i] = text.charCodeAt(i);
+  };
+  ascii(0, "RIFF"); v.setUint32(4, 36 + frames * 2, true);
+  ascii(8, "WAVE"); ascii(12, "fmt ");
+  v.setUint32(16, 16, true);
+  v.setUint16(20, 1, true);
+  v.setUint16(22, 1, true);
+  v.setUint32(24, CONFIG.pcmSampleRate, true);
+  v.setUint32(28, CONFIG.pcmSampleRate * 2, true);
+  v.setUint16(32, 2, true);
+  v.setUint16(34, 16, true);
+  ascii(36, "data"); v.setUint32(40, frames * 2, true);
+  let at = 44;
+  for (const part of parts)
+    for (const value of part) {
+      v.setInt16(at, value, true);
+      at += 2;
+    }
+  return new Blob([bytes], {type:"audio/wav"});
+}
+
+function consumePCM(w) {
+  if (!(w.pcm instanceof Int16Array) || !w.pcm.length) {
+    audioError = audioError || new Error("音声PCMが欠落しました。");
+    queueMicrotask(() => { if (state === "recording") stopRecording("pcm-missing"); });
+    return;
+  }
+  if (soundAudioOrigin === null) soundAudioOrigin = w.audioStart;
+  const start = (w.audioStart - soundAudioOrigin) * 1000;
+  if (pcmExpectedEnd !== null && Math.abs(start - pcmExpectedEnd) > 1) {
+    flushPCM();
+    session.events.push({
+      utc:new Date().toISOString(),type:"audio-gap",
+      startOffsetMs:pcmExpectedEnd,endOffsetMs:start
+    });
+  }
+  if (!pcmParts.length) {
+    pcmStartOffset = start;
+    pcmSourceStart = w.audioStart;
+  }
+  pcmParts.push(w.pcm);
+  pcmFrames += w.pcm.length;
+  pcmExpectedEnd = (w.audioEnd - soundAudioOrigin) * 1000;
+  if (pcmFrames >= CONFIG.pcmSampleRate * CONFIG.audioChunkMs / 1000)
+    flushPCM();
+}
+
+function flushPCM() {
+  if (!session || !pcmFrames) return;
+  const frames = pcmFrames;
+  const startOffsetMs = pcmStartOffset;
+  const sourceAudioStartSeconds = pcmSourceStart;
+  const blob = makeWav(pcmParts, frames);
+  pcmParts = []; pcmFrames = 0;
+  const durationMs = frames / CONFIG.pcmSampleRate * 1000;
+  const seq = chunkSeq++;
+  session.audioChunkCount = chunkSeq;
+  session.audioBytes += blob.size;
+  session.heartbeatMs = Date.now();
+  session.lastDataMs = Math.max(session.lastDataMs, session.heartbeatMs);
+  const s = snapshot();
+  enqueue(() => saveActive(s, "audio", {
+    sessionId:s.id,seq,blob,mime:"audio/wav",
+    independentlyPlayable:true,
+    startOffsetMs,endOffsetMs:startOffsetMs + durationMs,
+    startMs:s.startMs + startOffsetMs,
+    endMs:s.startMs + startOffsetMs + durationMs,
+    durationFrames:frames,durationMs,sampleRate:CONFIG.pcmSampleRate,
+    channels:1,bitsPerSample:16,sourceAudioStartSeconds,
+    timestampBasis:"audio-context-sample-clock",
+    synchronization:"unverified"
+  }));
+}
+const ready = { microphone: false, motion: false };
 
   function shortLabel(k) {
     const [, m, d] = k.split("-").map(Number);
@@ -715,66 +817,7 @@
     if (!audioContext.audioWorklet || !window.AudioWorkletNode)
       throw new Error("100ms非重複窓に必要なAudioWorkletに未対応です。対応ブラウザーで開いてください。");
 
-    const code = `
-class SomnoWindowProcessor extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.token = null;
-    this.reset();
-    this.port.onmessage = e => {
-      if (e.data.command === "stop") {
-        this.port.postMessage({type:"stopped", token:this.token});
-        this.token = null;
-        this.reset();
-      } else {
-        this.token = e.data.token || null;
-        this.reset();
-      }
-    };
-  }
-  reset() {
-    this.index = 0;
-    this.n = 0;
-    this.sum = 0;
-    this.origin = null;
-  }
-  process(inputs, outputs) {
-    const input = inputs[0]?.[0];
-    if (input) {
-      for (let i = 0; i < input.length; i++) {
-        if (this.origin === null) this.origin = currentFrame + i;
-        const v = input[i];
-        this.sum += v * v;
-        this.n++;
-        const target =
-          Math.round((this.index + 1) * sampleRate / 10) -
-          Math.round(this.index * sampleRate / 10);
-        if (this.n === target) {
-          const rms = Math.sqrt(this.sum / this.n);
-          const valid = Number.isFinite(rms) && rms > 0;
-          this.port.postMessage({
-            token:this.token,
-            rms:valid ? rms : null,
-            db:valid ? 20 * Math.log10(rms) : null,
-            durationMs:this.n / sampleRate * 1000,
-            audioStart:this.origin / sampleRate,
-            audioEnd:(currentFrame + i + 1) / sampleRate,
-            valid
-          });
-          this.index++;
-          this.n = 0;
-          this.sum = 0;
-          this.origin = null;
-        }
-      }
-    }
-    for (const channels of outputs)
-      for (const channel of channels) channel.fill(0);
-    return true;
-  }
-}
-registerProcessor("somnolog-100ms", SomnoWindowProcessor);
-`;
+    const code = "(function pcmWorkletModule() {\n  class SomnoWindowProcessor extends AudioWorkletProcessor {\n    constructor() {\n      super();\n      this.token = null;\n      this.reset();\n      this.port.onmessage = e => {\n        if (e.data.command === \"stop\") {\n          this.port.postMessage({type:\"stopped\",token:this.token});\n          this.token = null;\n          this.reset();\n        } else {\n          this.token = e.data.token || null;\n          this.reset();\n        }\n      };\n    }\n    reset() {\n      this.index = 0;\n      this.n = 0;\n      this.sum = 0;\n      this.origin = null;\n      this.inputWindow = new Float32Array(Math.ceil(sampleRate / 10) + 1);\n    }\n    pcm16() {\n      // 各出力区間の入力を平均する簡易間引き。\n      // 医療用・高忠実度のリサンプラーとは扱わない。\n      const out = new Int16Array(1600);\n      for (let j = 0; j < out.length; j++) {\n        const a = Math.floor(j * this.n / out.length);\n        const b = Math.floor((j + 1) * this.n / out.length);\n        let sum = 0;\n        for (let k = a; k < b; k++) sum += this.inputWindow[k];\n        const value = Math.max(-1, Math.min(1, sum / Math.max(1, b - a)));\n        out[j] = Math.round(value * (value < 0 ? 32768 : 32767));\n      }\n      return out;\n    }\n    process(inputs, outputs) {\n      const input = inputs[0]?.[0];\n      if (input) {\n        for (let i = 0; i < input.length; i++) {\n          if (this.origin === null) this.origin = currentFrame + i;\n          const value = input[i];\n          this.inputWindow[this.n] = Number.isFinite(value) ? value : 0;\n          this.sum += value * value;\n          this.n++;\n          const target =\n            Math.round((this.index + 1) * sampleRate / 10) -\n            Math.round(this.index * sampleRate / 10);\n          if (this.n === target) {\n            const rms = Math.sqrt(this.sum / this.n);\n            const valid = Number.isFinite(rms) && rms > 0;\n            const message = {\n              token:this.token,\n              rms:valid ? rms : null,\n              db:valid ? 20 * Math.log10(rms) : null,\n              durationMs:this.n / sampleRate * 1000,\n              audioStart:this.origin / sampleRate,\n              audioEnd:(currentFrame + i + 1) / sampleRate,\n              valid\n            };\n            if (this.token) {\n              const pcm = this.pcm16();\n              message.pcm = pcm;\n              this.port.postMessage(message, [pcm.buffer]);\n            } else {\n              this.port.postMessage(message);\n            }\n            this.index++;\n            this.n = 0;\n            this.sum = 0;\n            this.origin = null;\n          }\n        }\n      }\n      for (const channels of outputs)\n        for (const channel of channels) channel.fill(0);\n      return true;\n    }\n  }\n  registerProcessor(\"somnolog-100ms\", SomnoWindowProcessor);\n})();";
     const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
     try { await audioContext.audioWorklet.addModule(url); }
     finally { URL.revokeObjectURL(url); }
@@ -795,6 +838,14 @@ registerProcessor("somnolog-100ms", SomnoWindowProcessor);
     micSource.connect(soundNode);
     // プロセッサーの出力は常に無音。マイクをスピーカーへ直接流さない。
     soundNode.connect(audioContext.destination);
+    const activeContext = audioContext;
+    activeContext.addEventListener("statechange", () => {
+      if (audioContext !== activeContext || state !== "recording") return;
+      if (activeContext.state !== "running") {
+        audioError = audioError || new Error("音声クロックが停止しました。同期未確認区間を圧縮して継続せず、中断停止します。");
+        stopRecording("audio-context-suspended");
+      }
+    });
   }
 
   function consumeSoundWindow(w) {
@@ -813,6 +864,7 @@ registerProcessor("somnolog-100ms", SomnoWindowProcessor);
     if (!session || !["recording", "stopping"].includes(state) || w.token !== soundWindowToken) {
       soundStatus(); return;
     }
+    consumePCM(w);
     if (soundCalibration.failed) return;
 
     const now = Date.now(), mono = performance.now();
@@ -951,7 +1003,7 @@ registerProcessor("somnolog-100ms", SomnoWindowProcessor);
       if (!navigator.mediaDevices?.getUserMedia)
         throw new Error("マイク取得APIに未対応です。");
       const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC || !window.MediaRecorder || !window.AudioWorkletNode)
+      if (!AC || !window.AudioWorkletNode)
         throw new Error("録音・100ms窓の計測APIに未対応です。iOSの対応状況を確認してください。");
 
       // 古い入力の解放を待たず、タップの同一処理内で両APIを呼ぶ。
@@ -1109,107 +1161,92 @@ registerProcessor("somnolog-100ms", SomnoWindowProcessor);
         wakeLock = await navigator.wakeLock.request("screen");
     } catch (e) { /* 録音継続の保証として扱わない */ }
   }
-  async function startRecording() {
-    if (state !== "idle" || !ready.microphone || !db || updating || exporting || permissionBusy) return;
-    state = "starting"; updateControls();
-    writeError = null; audioError = null; queue = Promise.resolve(); pendingWrites = 0;
-    rows = []; chunkSeq = 0; batchSeq = 0; stopPromise = null;
-    let inserted = false;
-    try {
-      const resumeResult = audioContext.resume().then(() => null, e => e);
-      await acquireRecordingLock();
-      const resumeError = await withTimeout(resumeResult, 8000, "音声処理を再開できません。記録開始を再試行してください。");
-      if (resumeError) throw resumeError;
-      if (audioContext.state !== "running") throw new Error("音声処理が停止中です。");
-      if (!micStream.getAudioTracks().some(t => t.readyState === "live"))
-        throw new Error("マイク入力が終了しています。再取得してください。");
-      if (!soundNode) throw new Error("100ms窓の処理が準備されていません。");
-      const mime = ["audio/webm;codecs=opus", "audio/mp4", "audio/ogg;codecs=opus", "audio/webm"]
-        .find(m => MediaRecorder.isTypeSupported(m));
-      recorder = new MediaRecorder(micStream, mime ? { mimeType: mime } : undefined);
-      const now = Date.now();
-      session = {
-        id: crypto.randomUUID ? crypto.randomUUID() : `${now}-${Math.random().toString(16).slice(2)}`,
-        formatVersion: CONFIG.formatVersion,
-        date: dateKey(new Date(now).getFullYear(), new Date(now).getMonth(), new Date(now).getDate()),
-        startMs: now, startMono: performance.now(), endMs: null,
-        heartbeatMs: now, lastDataMs: now, registered: false, status: "recording",
-        settings: { ...CONFIG },
-        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-        timezoneOffsetMinutes: new Date(now).getTimezoneOffset(),
-        audioMime: recorder.mimeType || "", audioBytes: 0, audioChunkCount: 0,
-        logBatchCount: 0, sampleCount: 0, gapCount: 0, measuredElapsedMs: 0,
-        soundObservedMs: 0, motionObservedMs: 0,
-        soundDetectedMs: 0, motionDetectedMs: 0, soundEvaluatedMs: 0,
-        baselineDb: null, baselineValidMs: 0, events: [],
-        motionInitiallyAvailable: !!lastMotion && performance.now() - lastMotion.mono <= CONFIG.motionFreshMs,
-        audioSettings: micStream.getAudioTracks()[0].getSettings(),
-        audioContextSampleRate: audioContext.sampleRate, userAgent: navigator.userAgent
-      };
-      await insertNewSession(session); inserted = true;
-      let resolveRecorder;
-      recorderDone = new Promise(resolve => resolveRecorder = resolve);
-      recorder.addEventListener("dataavailable", e => {
-        if (!session || !e.data.size) return;
-        const seq = chunkSeq++, end = Date.now(), start = audioLastEvent;
-        audioLastEvent = end;
-        session.audioMime = recorder.mimeType || e.data.type || session.audioMime;
-        session.audioChunkCount = chunkSeq; session.audioBytes += e.data.size;
-        session.heartbeatMs = end; session.lastDataMs = Math.max(session.lastDataMs, end);
-        const s = snapshot();
-        enqueue(() => saveActive(s, "audio", {
-          sessionId: s.id, seq, startMs: start, endMs: end, mime: e.data.type, blob: e.data
-        }));
-      });
-      recorder.addEventListener("stop", () => {
-        resolveRecorder();
-        if (state === "recording") queueMicrotask(() => stopRecording("recorder-stopped"));
-      });
-      recorder.addEventListener("error", e => {
-        audioError = e.error || new Error("録音処理でエラーが発生しました。");
-        if (state === "recording") stopRecording("recorder-error");
-      });
-      recorder.start(CONFIG.audioChunkMs);
-      audioLastEvent = Date.now();
-      session.startMs = audioLastEvent; session.startMono = performance.now();
-      session.date = dateKey(new Date(audioLastEvent).getFullYear(),
-        new Date(audioLastEvent).getMonth(), new Date(audioLastEvent).getDate());
-      soundCalibration = { values: [], elapsedMs: 0, baselineDb: null, invalid: false, failed: false };
-      soundAudioOrigin = null; soundLastAudioEnd = null;
-      latestSoundWindow = null; liveSound = []; previewDb = [];
-      soundWindowToken = session.id;
-      state = "recording";
-      soundNode.port.postMessage({ token: soundWindowToken });
-      soundStatus();
-      flushTimer = setInterval(flushRows, CONFIG.flushMs);
-      updateControls(); requestWakeLock();
-      navigator.storage?.persist?.().catch(() => {});
-    } catch (e) {
-      try {          if (recorder && recorder.state !== "inactive") recorder.stop();
-        } catch {}
-        if (session && inserted) {
-          try {
-            const stored = await getSession(session.id);
-            if (stored?.status === "recording") {
-              stored.status = "failed";
-              stored.endMs = Date.now();
-              stored.error = errorText(e);
-              await putSession(stored);
-            }
-          } catch {}
+async function startRecording() {
+  if (state !== "idle" || !ready.microphone || !db || updating || exporting || permissionBusy) return;
+  state = "starting"; updateControls();
+  writeError = null; audioError = null;
+  queue = Promise.resolve(); pendingWrites = 0;
+  rows = []; chunkSeq = 0; batchSeq = 0; stopPromise = null;
+  pcmParts = []; pcmFrames = 0; pcmExpectedEnd = null;
+  let inserted = false;
+  try {
+    const patientId = readPatientId();
+    const resumeResult = audioContext.resume().then(() => null, e => e);
+    await acquireRecordingLock();
+    const resumeError = await withTimeout(resumeResult, 8000, "音声処理を再開できません。");
+    if (resumeError) throw resumeError;
+    if (audioContext.state !== "running")
+      throw new Error("音声処理が停止中です。");
+    if (audioContext.sampleRate < CONFIG.pcmSampleRate)
+      throw new Error("入力サンプルレートが16kHz未満です。");
+    if (!micStream.getAudioTracks().some(t => t.readyState === "live" && !t.muted))
+      throw new Error("マイク入力が終了、またはミュートされています。");
+    if (!soundNode) throw new Error("100ms窓が準備されていません。");
+    const now = Date.now();
+    session = {
+      id:crypto.randomUUID(),patientId,
+      appVersion:"005",formatVersion:CONFIG.formatVersion,
+      date:dateKey(new Date(now).getFullYear(),new Date(now).getMonth(),new Date(now).getDate()),
+      startMs:now,startMono:performance.now(),endMs:null,
+      heartbeatMs:now,lastDataMs:now,registered:false,status:"recording",
+      settings:{...CONFIG},
+      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
+      timezoneOffsetMinutes:new Date(now).getTimezoneOffset(),
+      audioMime:"audio/wav",audioCaptureMode:"independent-pcm-wav",
+      audioBytes:0,audioChunkCount:0,logBatchCount:0,
+      sampleCount:0,gapCount:0,measuredElapsedMs:0,
+      soundObservedMs:0,motionObservedMs:0,
+      soundDetectedMs:0,motionDetectedMs:0,soundEvaluatedMs:0,
+      baselineDb:null,baselineValidMs:0,events:[],
+      motionInitiallyAvailable:!!lastMotion &&
+        performance.now() - lastMotion.mono <= CONFIG.motionFreshMs,
+      audioSettings:micStream.getAudioTracks()[0].getSettings(),
+      audioContextSampleRate:audioContext.sampleRate,
+      exportedAudioSampleRate:CONFIG.pcmSampleRate,
+      userAgent:navigator.userAgent,
+      synchronization:"unverified"
+    };
+    await insertNewSession(session); inserted = true;
+    const epoch = Date.now();
+    session.startMs = epoch;
+    session.startMono = performance.now();
+    session.heartbeatMs = epoch; session.lastDataMs = epoch;
+    session.audioClockAtStartRequestSeconds = audioContext.currentTime;
+    session.date = dateKey(new Date(epoch).getFullYear(),new Date(epoch).getMonth(),new Date(epoch).getDate());
+    soundCalibration = {values:[],elapsedMs:0,baselineDb:null,invalid:false,failed:false};
+    soundAudioOrigin = null; soundLastAudioEnd = null;
+    latestSoundWindow = null; liveSound = []; previewDb = [];
+    soundWindowToken = session.id;
+    state = "recording";
+    el("anonymous-id").disabled = true;
+    soundNode.port.postMessage({token:soundWindowToken});
+    // 更新された開始基準も音声到着前に保存予約する。
+    const initial = snapshot();
+    enqueue(() => saveActive(initial));
+    soundStatus();
+    flushTimer = setInterval(flushRows, CONFIG.flushMs);
+    updateControls(); requestWakeLock();
+    navigator.storage?.persist?.().catch(() => {});
+  } catch (e) {
+    if (session && inserted) {
+      try {
+        await queue;
+        const stored = await getSession(session.id);
+        if (stored?.status === "recording") {
+          stored.status = "failed"; stored.endMs = Date.now();
+          stored.error = errorText(e); await putSession(stored);
         }
-        soundWindowToken = null;
-        soundNode?.port.postMessage({ token: null });
-        session = null;
-        recorder = null;
-        state = "idle";
-        recordingUnlock?.();
-        recordingUnlock = null;
-        updateControls();
-        showMessage("記録を開始できません", errorText(e));
-      }
+      } catch {}
     }
-
+    soundWindowToken = null;
+    soundNode?.port.postMessage({token:null});
+    session = null; pcmParts = []; pcmFrames = 0;
+    state = "idle";
+    el("anonymous-id").disabled = false;
+    recordingUnlock?.(); recordingUnlock = null;
+    updateControls(); showMessage("記録を開始できません", errorText(e));
+  }
+}
     // 完成済み100ms窓を受け取ってから集計を閉じる。
     // 停止時の100ms未満の端数窓は検出時間へ加算しない。
     async function stopSoundWindows() {
@@ -1247,32 +1284,10 @@ registerProcessor("somnolog-100ms", SomnoWindowProcessor);
         session.measuredElapsedMs = performance.now() - session.startMono;
         session.stopReason = reason;
 
-        // 音声録音と窓処理の停止要求を近接して発行する。
-        const soundStopping = stopSoundWindows().catch(e => {
-          audioError = audioError || e;
-        });
-
-        try {
-          if (recorder && recorder.state !== "inactive") recorder.stop();
-
-          let timer;
-          try {
-            await Promise.race([
-              recorderDone,
-              new Promise((_, reject) => {
-                timer = setTimeout(() => reject(new Error(
-                  "録音停止が30秒以内に完了しませんでした。最終音声チャンクの完全性は未確認です。"
-                )), 30000);
-              })
-            ]);
-          } finally {
-            clearTimeout(timer);
-          }
-        } catch (e) {
-          audioError = audioError || e;
-        }
-
-        await soundStopping;
+        await stopSoundWindows().catch(e => {
+        audioError = audioError || e;
+      });
+      flushPCM();
         flushRows();
         await queue;
 
@@ -1307,7 +1322,7 @@ registerProcessor("somnolog-100ms", SomnoWindowProcessor);
 
         currentResult = result;
         session = null;
-        recorder = null;
+        el("anonymous-id").disabled = false;
         state = "idle";
 
         if (wakeLock) {
@@ -1664,28 +1679,81 @@ registerProcessor("somnolog-100ms", SomnoWindowProcessor);
       }
     }
 
-    function openShare(target = visibleRecords(), origin = "calendar") {
-      if (!target.length || exporting || updating) return;
-      preparedShare = null;
-      shareRecords = target.slice();
-      shareReturn = origin;
-      closeDialogs();
-      const start = Math.min(...target.map(r => r.startMs));
-      const end = Math.max(...target.map(r => r.endMs || r.lastDataMs));
-      el("zip-period").textContent =
-        `${dateTimeLabel(start)}〜${dateTimeLabel(end)}`;
-      el("zip-count").textContent =
-        `対象：${target.length}件／音声あり：${target.filter(r => r.audioChunkCount > 0).length}件`;
-      el("zip-name").textContent =
-        `SomnoLog_${new Date(start).toISOString().slice(0, 10)}_${target.length}records.zip`;
-      el("share-status").textContent =
-        "外部送信は利用者の共有操作後のみ行います。音声は連続録音のチャンクを順番通り連結します。";
-      el("share-close").textContent =
-        shareReturn === "current" ? "閉じる" : "カレンダーに戻る";
-      el("zip-progress").hidden = true;
-      el("share-dialog").showModal();
+function planExports(target) {
+  const direct = !!window.showSaveFilePicker;
+  const plans = [];
+  for (const r of target) {
+    const count = Number(r.audioChunkCount) || 0;
+    if (direct) {
+      plans.push({r,first:0,last:count,from:0,to:elapsed(r),volume:1,total:1});
+    } else if (count) {
+      const total = Math.ceil(count / 120);
+      for (let volume = 1; volume <= total; volume++) {
+        const first = (volume - 1) * 120;
+        plans.push({
+          r,first,last:Math.min(count,first + 120),
+          from:first * CONFIG.audioChunkMs,
+          to:Math.min(elapsed(r),(first + 120) * CONFIG.audioChunkMs),
+          volume,total
+        });
+      }
+    } else {
+      const total = Math.max(1, Math.ceil(elapsed(r) / 1200000));
+      for (let volume = 1; volume <= total; volume++)
+        plans.push({
+          r,first:0,last:0,
+          from:(volume - 1) * 1200000,
+          to:Math.min(elapsed(r),volume * 1200000),
+          volume,total
+        });
     }
+  }
+  return plans;
+}
 
+function safeId(value) {
+  return String(value || "").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "unknown";
+}
+
+function planFilename(p) {
+  const patient = p.r.patientId || "unassigned";
+  return `SleepLog_${safeId(patient)}_${safeId(p.r.id)}_part${String(p.volume).padStart(3,"0")}of${String(p.total).padStart(3,"0")}.zip`;
+}
+
+function refreshExportLabel() {
+  const p = exportPlans[exportPlanIndex];
+  el("zip-save").textContent = preparedShare ?
+    "この分冊を端末で共有" : p ?
+    `ZIP ${exportPlanIndex + 1}/${exportPlans.length} を作成・保存` : "全分冊の保存操作が完了";
+  el("zip-save").disabled = !p || exporting;
+  el("zip-name").textContent = p ? planFilename(p) : "作成予定の分冊はありません";
+}
+
+function finishExportPart() {
+  preparedShare = null;
+  exportPlanIndex++;
+  refreshExportLabel();
+  const rest = exportPlans.length - exportPlanIndex;
+  el("share-status").textContent = rest ?
+    `この分冊の保存・共有操作を行いました。残り${rest}分冊です。次のZIPを作成してください。端末で保存結果を確認してください。` :
+    "全分冊の保存・共有操作が完了しました。保存結果と医師への到達は端末側で確認してください。";
+}
+function openShare(target = visibleRecords(), origin = "calendar") {
+  if (!target.length || exporting || updating) return;
+  preparedShare = null; shareRecords = target.slice(); shareReturn = origin;
+  exportPlans = planExports(shareRecords); exportPlanIndex = 0;
+  closeDialogs();
+  const start = Math.min(...target.map(r => r.startMs));
+  const end = Math.max(...target.map(r => r.endMs || r.lastDataMs || r.startMs));
+  el("zip-period").textContent = `${dateTimeLabel(start)}〜${dateTimeLabel(end)}`;
+  el("zip-count").textContent = `対象${target.length}記録／${exportPlans.length}分冊`;
+  el("share-status").textContent =
+    "各ZIPは1記録またはその一部です。全分冊を同じフォルダーへ保存してください。旧録音の断片は単独再生できるとは限りません。";
+  el("share-close").textContent = origin === "current" ? "閉じる" : "カレンダーに戻る";
+  el("zip-progress").hidden = true;
+  refreshExportLabel();
+  el("share-dialog").showModal();
+}
     // ZIP32 / STORE方式。対応環境では保存先へ順次書き出す。
     const encoder = new TextEncoder();
     const crcTable = Array.from({ length: 256 }, (_, i) => {
@@ -1807,159 +1875,209 @@ registerProcessor("somnolog-100ms", SomnoWindowProcessor);
       }
     }
 
-    function csvCell(value) {
-      if (value === null || value === undefined) return "";
-      const text = String(value);
-      return /[",\r\n]/.test(text)
-        ? '"' + text.replace(/"/g, '""') + '"'
-        : text;
-    }
-
-    function csvLine(values) {
-      return values.map(csvCell).join(",") + "\r\n";
-    }
-
-    const logColumns = [
-      "utc_timestamp", "epoch_ms", "offset_ms", "interval_ms",
-      "sound_rms", "motion_magnitude_m_s2",
-      "ax_m_s2", "ay_m_s2", "az_m_s2", "motion_source",
-      "sound_detected", "motion_detected", "gap", "visibility",
-      "sound_dbfs", "baseline_db", "sound_delta_db", "sound_phase",
-      "audio_window_start_seconds", "audio_window_end_seconds",
-      "received_epoch_ms"
-    ];
-
-    async function* csvParts(r) {
-      yield encoder.encode(csvLine(logColumns));
-      for (let seq = 0; seq < r.logBatchCount; seq++) {
-        const part = await getPart("logs", r.id, seq);
-        if (!part)
-          throw new Error("保存ログが欠落しています：" + r.id + "/" + seq);
-        let text = "";
-        for (const row of part.rows) {
-          text += csvLine([
-            new Date(row.tMs).toISOString(), row.tMs,
-            row.offsetMs, row.intervalMs, row.soundRms,
-            row.motionMagnitude, row.ax, row.ay, row.az,
-            row.motionSource, row.soundDetected, row.motionDetected,
-            row.gap, row.visibility, row.soundDbfs, row.baselineDb,
-            row.soundDeltaDb, row.soundPhase,
-            row.audioWindowStartSeconds, row.audioWindowEndSeconds,
-            row.receivedEpochMs
-          ]);
-        }
-        yield encoder.encode(text);
+async function inspectAudioPlan(p) {
+  const entries = [];
+  const r = p.r;
+  const independent = r.audioCaptureMode === "independent-pcm-wav";
+  for (let seq = p.first; seq < p.last; seq++) {
+    const part = await getPart("audio", r.id, seq);
+    if (!part?.blob) throw new Error(`音声チャンクが欠落しています：${r.id}/${seq}`);
+    const ext = independent ? "wav" : audioExtension(part.mime || r.audioMime);
+    const path = `audio/${independent ? "chunk" : "fragment"}_${String(seq + 1).padStart(6,"0")}.${ext}`;
+    const start = independent ? part.startOffsetMs :
+      Number.isFinite(part.startMs) ? part.startMs - r.startMs : null;
+    const end = independent ? part.endOffsetMs :
+      Number.isFinite(part.endMs) ? part.endMs - r.startMs : null;
+    entries.push({
+      path,sequence:seq,byteLength:part.blob.size,
+      mimeType:part.mime || r.audioMime,
+      independentlyPlayable:independent && part.independentlyPlayable === true,
+      startOffsetMs:start,
+      endOffsetMs:end,
+      durationMs:independent ? part.durationMs : null,
+      durationFrames:independent ? part.durationFrames : null,
+      sampleRate:independent ? part.sampleRate : null,
+      channels:independent ? part.channels : null,
+      bitsPerSample:independent ? part.bitsPerSample : null,
+      timestampBasis:independent ?
+        "audio-context-sample-clock" : "dataavailable-receipt-estimate",
+      synchronization:"unverified",
+      reconstruction:independent ? null : {
+        groupId:r.id,method:"byte-concatenate-all-fragments-in-sequence",
+        requiresAllSessionFragments:true,
+        totalFragmentCount:r.audioChunkCount
       }
+    });
+  }
+  if (entries.length) {
+    const first = entries[0], last = entries[entries.length - 1];
+    if (Number.isFinite(first.startOffsetMs)) p.from = Math.max(0, first.startOffsetMs);
+    if (Number.isFinite(last.endOffsetMs)) p.to = Math.max(p.from, last.endOffsetMs);
+    if (p.volume === 1) p.from = 0;
+    if (p.volume === p.total) p.to = Math.max(p.to, elapsed(r));
+  }
+  return entries;
+}
+
+function audioExtension(mime = "") {
+  return mime.includes("wav") ? "wav" :
+    mime.includes("mp4") ? "m4a" :
+    mime.includes("ogg") ? "ogg" :
+    mime.includes("webm") ? "webm" : "bin";
+}
+
+async function* logJsonParts(p) {
+  yield encoder.encode(JSON.stringify({
+    sessionId:p.r.id,
+    range:{startOffsetMs:p.from,endOffsetMs:p.to},
+    intervalConvention:"window end in (startOffsetMs,endOffsetMs]",
+    timestamps:"estimated epoch from session start plus AudioContext sample clock",
+    synchronization:"unverified"
+  }).slice(0,-1) + ',"samples":[');
+  let first = true;
+  for (let seq = 0; seq < p.r.logBatchCount; seq++) {
+    const batch = await getPart("logs",p.r.id,seq);
+    if (!batch) throw new Error(`保存ログが欠落しています：${p.r.id}/${seq}`);
+    let text = "";
+    for (const row of batch.rows) {
+      if (!Number.isFinite(row.offsetMs)) throw new Error("ログの経過時刻が不正です。");
+      if (row.offsetMs <= p.from || row.offsetMs > p.to + 0.001) continue;
+      const soundValid = Number.isFinite(row.soundDbfs) || Number.isFinite(row.soundRms);
+      const motionValid = Number.isFinite(row.motionMagnitude);
+      const record = {
+        ...row,
+        utcTimestamp:new Date(row.tMs).toISOString(),
+        motionMagnitudeG:motionValid ? row.motionMagnitude / 9.80665 : null,
+        missing:{
+          sound:soundValid ? "available" : "unavailable",
+          motion:motionValid ? "available" : "unavailable",
+          soundEvaluation:row.soundDetected === null || row.soundDetected === undefined ?
+            "not-evaluated" : "evaluated"
+        },
+        synchronization:"unverified"
+      };
+      text += (first ? "" : ",") + JSON.stringify(record);
+      first = false;
     }
+    if (text) yield encoder.encode(text);
+  }
+  yield encoder.encode("]}");
+}
 
-    async function* audioParts(r) {
-      for (let seq = 0; seq < r.audioChunkCount; seq++) {
-        const part = await getPart("audio", r.id, seq);
-        if (!part?.blob)
-          throw new Error("音声チャンクが欠落しています：" + r.id + "/" + seq);
-        yield* blobParts(part.blob);
-      }
-    }
-
-    function audioExtension(mime = "") {
-      return mime.includes("mp4") ? "m4a" :
-        mime.includes("ogg") ? "ogg" :
-        mime.includes("webm") ? "webm" : "bin";
-    }
-
-    const FORMAT_DESCRIPTION = {
-      format: "SomnoLog",
-      version: CONFIG.formatVersion,
-      application: "SomnoLog-functional-v003",
-      compatibility: "SomnoGraphの読み込み互換性は未確認",
-      timestamps:
-        "UTC ISO8601 / epoch milliseconds。v003の窓時刻は開始epochと音声クロックから推定。受信epochも併記。MediaRecorderとの厳密な同期は未保証。",
-      units: {
-        soundRms: "PCM float RMS",
-        soundDbfs: "20*log10(RMS); not calibrated sound pressure",
-        baselineDb: "median dBFS of first 100 non-overlapping 100ms windows",
-        soundDeltaDb: "soundDbfs - baselineDb",
-        motion: "m/s²",
-        duration: "milliseconds"
-      },
-      missing:
-        "CSV空欄 / JSON null。欠測はfalseやゼロと区別。RMS=0は無信号として欠測扱い。",
-      detection:
-        "v003：開始10秒の中央値を固定基準にし、差>=10dBの100ms窓を加算。窓時間はサンプル数/sampleRate*1000。基準取得窓と停止時端数窓は音検出の集計対象外。開始10秒に欠測がある場合は基準取得失敗として停止。旧記録の判定方式は各metadata.settingsを参照。",
-      motion:
-        "accelerationを優先。なければaccelerationIncludingGravityからalpha=0.9のEMA重力推定を引く。直近のセンサー値を音声窓受信時に参照するため、音声との厳密な時間同期は未保証。",
-      audio:
-        "MediaRecorderの連続録音。全チャンクを順番通りバイト連結した1ファイル。チャンクの時刻はdataavailable受信時刻。単独チャンクは再生可能とは限らない。",
-      files: [
-        "format.json", "records.csv",
-        "sessions/<id>/metadata.json",
-        "sessions/<id>/timeseries.csv",
-        "sessions/<id>/audio.<actual extension>"
-      ],
-      limitations: [
-        "相対差で補正できるのは一定の入力感度差。AGC・ノイズ抑制・クリッピングは同一化できない",
-        "dBFSは校正された音圧ではない。診断・いびき判定ではない",
-        "ページ停止・画面ロック・OS省電力で録音や計測が中断する可能性",
-        "実機・終夜録音・SomnoGraph互換性は未検証",
-        "ZIP32: 4GiB未満 / 65535 files以下",
-        "File System Access非対応時はZIP実サイズ128MiB上限"
-      ]
-    };
-
-    async function buildZip(writer, target, progress = () => {}) {
-      await writer.add(
-        "format.json",
-        textParts(JSON.stringify(FORMAT_DESCRIPTION, null, 2))
-      );
-
-      let text = csvLine([
-        "session_id", "start_utc", "end_utc", "elapsed_ms",
-        "sound_observed_ms", "motion_observed_ms",
-        "sound_detected_ms", "motion_detected_ms", "status",
-        "audio_mime", "audio_bytes", "audio_file",
-        "baseline_db", "sound_evaluated_ms"
-      ]);
-
-      for (const r of target) {
-        text += csvLine([
-          r.id,
-          new Date(r.startMs).toISOString(),
-          new Date(r.endMs || r.lastDataMs).toISOString(),
-          elapsed(r), r.soundObservedMs, r.motionObservedMs,
-          r.soundDetectedMs, r.motionDetectedMs, r.status,
-          r.audioMime, r.audioBytes,
-          r.audioChunkCount
-            ? `sessions/${r.id}/audio.${audioExtension(r.audioMime)}`
-            : "",
-          r.baselineDb, r.soundEvaluatedMs
-        ]);
-      }
-      await writer.add("records.csv", textParts(text));
-
-      let count = 0;
-      for (const r of target) {
-        const meta = {
-          ...r,
-          audioPresent: r.audioChunkCount > 0,
-          audioCaptureDurationMs: null
-        };
-        delete meta.startMono;
-        await writer.add(
-          `sessions/${r.id}/metadata.json`,
-          textParts(JSON.stringify(meta, null, 2))
-        );
-        await writer.add(`sessions/${r.id}/timeseries.csv`, csvParts(r));
-        if (r.audioChunkCount) {
-          await writer.add(
-            `sessions/${r.id}/audio.${audioExtension(r.audioMime)}`,
-            audioParts(r)
-          );
-        }
-        progress(++count / target.length * 100);
-      }
-      await writer.finish();
-    }
-
+async function* storedAudioParts(r, seq) {
+  const part = await getPart("audio",r.id,seq);
+  if (!part?.blob) throw new Error(`音声が欠落しています：${r.id}/${seq}`);
+  yield* blobParts(part.blob);
+}
+async function buildZip(writer, plan, progress = () => {}) {
+  const entries = await inspectAudioPlan(plan);
+  const r = plan.r;
+  const independent = r.audioCaptureMode === "independent-pcm-wav";
+  const end = r.endMs || r.lastDataMs || r.startMs;
+  const manifest = {
+    format:"zip-store-v1",
+    schemaRevision:"somnolog-005-draft-1",
+    schemaStatus:"reader-interoperability-unverified",
+    application:{name:"SomnoLog",version:r.appVersion || "legacy",exporterVersion:"005"},
+    sessionId:r.id,
+    patientId:r.patientId || "unassigned-" + safeId(r.id),
+    patientIdStatus:r.patientId ? "assigned" : "legacy-unlinked",
+    recordingStartEpochMs:r.startMs,
+    recordingEndEpochMs:end,
+    recordingStartUtc:new Date(r.startMs).toISOString(),
+    recordingEndUtc:new Date(end).toISOString(),
+    timezone:r.timezone || null,
+    volume:{
+      number:plan.volume,total:plan.total,
+      startOffsetMs:plan.from,endOffsetMs:plan.to,
+      setId:r.id,
+      containsEntireRecording:plan.total === 1
+    },
+    sampleRate:independent ? CONFIG.pcmSampleRate : r.audioSettings?.sampleRate || null,
+    inputSampleRate:r.audioContextSampleRate || null,
+    evaluationWindowMs:r.settings?.sampleMs || 100,
+    sound:{
+      dbUnit:"dBFS; not calibrated sound pressure",
+      baselineDb:Number.isFinite(r.baselineDb) ? r.baselineDb : null,
+      baselineDurationMs:r.settings?.baselineMs || null,
+      detectionDeltaDb:r.settings?.soundDeltaDb || null
+    },
+    motion:{
+      rawUnit:"m/s2",exportAdditionalUnit:"g",
+      conversion:"g = m/s2 / 9.80665",
+      originalThresholdM_s2:r.settings?.motionThreshold ?? null,
+      note:"従来のしきい値と計測方式を変更していない"
+    },
+    audio:{
+      mode:independent ? "independent-pcm-wav" : "legacy-dependent-fragments",
+      files:entries.length,
+      sessionFileCount:r.audioChunkCount || 0,
+      index:"audio-index.json",
+      nominalChunkMs:independent ? CONFIG.audioChunkMs : null,
+      channels:independent ? 1 : null,
+      bitsPerSample:independent ? 16 : null,
+      resampling:independent ?
+        "100ms window local bin-average to 16kHz; not high-fidelity resampling" : null,
+      partialFinalWindow:"sub-100ms tail not captured by v005 PCM path"
+    },
+    synchronization:{
+      status:"unverified",targetToleranceMs:100,measuredToleranceMs:null,
+      audioAndSound:"same AudioWorklet input and 100ms windows for v005 recordings",
+      epochAnchor:"start request epoch; first completed input window is offset origin",
+      motion:"latest sensor event at sound window receipt; strict alignment unverified",
+      note:"AudioContext停止時は中断停止する。±100msを保証しない。"
+    },
+    quality:{
+      recordingStatus:r.status,stopReason:r.stopReason || null,
+      error:r.error || null,gapCount:r.gapCount || 0,
+      incomplete:r.status !== "completed",
+      audioIndependent:independent
+    },
+    sessionSummary:{
+      elapsedMs:elapsed(r),sampleCount:r.sampleCount,
+      soundObservedMs:r.soundObservedMs,
+      motionObservedMs:r.motionObservedMs,
+      soundDetectedMs:r.soundDetectedMs,
+      motionDetectedMs:r.motionDetectedMs
+    },
+    events:r.events || [],
+    files:["manifest.json","log.json","audio-index.json","README.txt","audio/"]
+  };
+  await writer.add("manifest.json",textParts(JSON.stringify(manifest,null,2)));
+  await writer.add("audio-index.json",textParts(JSON.stringify({
+    sessionId:r.id,volume:manifest.volume,
+    timeline:"offset milliseconds from recording origin",
+    entries
+  },null,2)));
+  await writer.add("log.json",logJsonParts(plan));
+  const readme = [
+    "SomnoLog / zip-store-v1 / schema draft somnolog-005-draft-1",
+    "正式なSomnoGraph読み込み互換性は未検証。",
+    `セッション：${r.id}`,
+    `匿名ID：${manifest.patientId}（${manifest.patientIdStatus}）`,
+    `分冊：${plan.volume}/${plan.total}`,
+    `収録範囲：${plan.from}〜${plan.to} ms。オフセットは分冊ごとにゼロへ戻さない。`,
+    "全分冊を保持し、sessionIdとvolume.numberで組み合わせる。",
+    "log.jsonのsamplesは評価窓の終了時刻で範囲選択。",
+    "null / unavailableは欠測。false / 0は取得済みの判定なし・ゼロと区別。",
+    "開始10秒は環境音基準測定。音の検出集計対象外。",
+    "dBFSは音圧ではない。診断・いびき分類を行わない。",
+    "体動の元単位はm/s2。G値を追加し、既存の判定しきい値は変更していない。",
+    "音声・体動の同期精度は未確認。±100msは目標で保証値ではない。",
+    independent ?
+      "audio/chunk_*.wavは単独再生可能な16kHz・モノラル・16bit PCM。簡易間引き。停止時100ms未満の端数は未収録。" :
+      "旧音声：audio/fragment_*は単独再生非保証。全分冊の全断片をsequence順でバイト連結して元ストリームを再構成する。受信時刻は実音声境界ではない。",
+    r.patientId ? "" : "旧記録の匿名IDは未紐付け。受付・カルテ対応を別途確認する。",
+    "欠測・中断区間を架空データや無音で補完しない。",
+    "ZIP作成は端末内。送信は利用者の共有操作のみ。"
+  ].filter(Boolean).join("\r\n");
+  await writer.add("README.txt",textParts(readme));
+  for (let i = 0; i < entries.length; i++) {
+    await writer.add(entries[i].path,storedAudioParts(r,entries[i].sequence));
+    progress((i + 1) / entries.length * 95);
+  }
+  await writer.finish(); progress(100);
+}
     function downloadBlob(blob, name) {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -1971,125 +2089,84 @@ registerProcessor("somnolog-100ms", SomnoWindowProcessor);
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     }
 
-    async function exportZip() {
-      if (exporting || updating || !shareRecords.length || state !== "idle")
-        return;
-
-      exporting = true;
-      updateControls();
-      el("zip-save").disabled = true;
-      el("share-close").disabled = true;
-      el("zip-progress").hidden = false;
-      el("zip-progress").value = 0;
-
-      const target = shareRecords.map(r => ({ ...r }));
-      const name = el("zip-name").textContent;
-      let writable = null;
-
-      try {
-        const expected = target.reduce(
-          (n, r) => n + (r.audioBytes || 0) +
-            (r.sampleCount || 0) * 420 + 20000,
-          20000
-        );
-        if (expected > CONFIG.memoryExportLimit && !window.showSaveFilePicker)
-          throw new Error(
-            "ZIPが128MiB上限を超える可能性があります。期間を分けるか、File System Access対応ブラウザーを使用してください。"
-          );
-
-        let parts = [], size = 0, sink;
-        if (
-          window.showSaveFilePicker &&
-          (!(navigator.share && navigator.canShare) ||
-            expected > CONFIG.memoryExportLimit)
-        ) {
-          const handle = await window.showSaveFilePicker({
-            suggestedName: name,
-            types: [{
-              description: "ZIP",
-              accept: { "application/zip": [".zip"] }
-            }]
-          });
-          writable = await handle.createWritable();
-          sink = {
-            write: b => writable.write(b),
-            close: () => writable.close()
-          };
-        } else {
-          sink = {
-            write: async b => {
-              size += b.length;
-              if (size > CONFIG.memoryExportLimit)
-                throw new Error("ZIP実サイズが128MiB上限を超えました。期間を分けてください。");
-              parts.push(b);
-            },
-            close: async () => {}
-          };
-        }
-
-        el("share-status").textContent =
-          "ZIPを作成中。音声を外部へ送信していません。";
-        await buildZip(
-          new ZipWriter(sink), target,
-          v => el("zip-progress").value = v
-        );
-
-        if (writable) {
-          el("share-status").textContent =
-            "ZIPを保存しました。医師への送信は行っていません。端末の共有操作で送付してください。";
-        } else {
-          const file = new File(parts, name, { type: "application/zip" });
-          parts = [];
-          if (navigator.share && navigator.canShare?.({ files: [file] })) {
-            preparedShare = { file, name };
-            el("share-status").textContent =
-              "ZIP作成完了。同じボタンをもう一度押すと端末の共有画面を開きます。閉じると準備データは破棄されます。";
-          } else {
-            downloadBlob(file, name);
-            el("share-status").textContent =
-              "ZIPのダウンロードを要求しました。端末で保存結果を確認してください。";
-          }
-        }
-      } catch (e) {
-        if (writable) {
-          try { await writable.abort(); } catch {}
-        }
-        el("share-status").textContent = e.name === "AbortError"
-          ? "保存をキャンセルしました。"
-          : "ZIP作成・保存失敗：" + errorText(e);
-      } finally {
-        exporting = false;
-        el("zip-save").disabled = false;
-        el("share-close").disabled = false;
-        updateControls();
+async function exportZip() {
+  if (exporting || updating || state !== "idle") return;
+  const plan = exportPlans[exportPlanIndex];
+  if (!plan) return;
+  exporting = true; updateControls(); refreshExportLabel();
+  el("share-close").disabled = true;
+  el("zip-progress").hidden = false; el("zip-progress").value = 0;
+  let writable = null, parts = [], size = 0;
+  const name = planFilename(plan);
+  try {
+    let sink;
+    if (window.showSaveFilePicker) {
+      const handle = await window.showSaveFilePicker({
+        suggestedName:name,
+        types:[{description:"ZIP",accept:{"application/zip":[".zip"]}}]
+      });
+      writable = await handle.createWritable();
+      sink = {write:b => writable.write(b),close:() => writable.close()};
+    } else {
+      sink = {
+        write:async b => {
+          size += b.length;
+          if (size > CONFIG.memoryExportLimit)
+            throw new Error("この分冊が128MiBを超えました。直接ファイル保存対応ブラウザーを使用してください。");
+          parts.push(b);
+        },
+        close:async () => {}
+      };
+    }
+    el("share-status").textContent = "ZIP作成中。ファイルを外部送信していません。";
+    await buildZip(new ZipWriter(sink),{...plan},v => el("zip-progress").value = v);
+    if (writable) {
+      finishExportPart();
+    } else {
+      const file = new File(parts,name,{type:"application/zip"});
+      parts = [];
+      let canShare = false;
+      try { canShare = !!navigator.share && !!navigator.canShare?.({files:[file]}); } catch {}
+      if (canShare) {
+        preparedShare = {file,name};
+        el("share-status").textContent = "分冊ZIP作成完了。同じボタンをもう一度押して共有してください。";
+      } else {
+        downloadBlob(file,name); finishExportPart();
       }
     }
-
-    async function shareOrExport() {
-      if (exporting || updating) return;
-      if (!preparedShare) return exportZip();
-      const { file, name } = preparedShare;
-
-      try {
-        await navigator.share({
-          files: [file], title: "SomnoLog 睡眠記録"
-        });
-        el("share-status").textContent =
-          "端末の共有操作が完了しました。医師への到達・受領は確認できません。";
-        preparedShare = null;
-      } catch (e) {
-        if (e.name === "AbortError") {
-          el("share-status").textContent =
-            "共有をキャンセルしました。再タップで共有できます。";
-          return;
-        }
-        downloadBlob(file, name);
-        preparedShare = null;
-        el("share-status").textContent =
-          "共有できないためダウンロードを要求しました。保存結果を確認してください。";
-      }
+  } catch (e) {
+    if (writable) { try { await writable.abort(); } catch {} }
+    parts = [];
+    el("share-status").textContent = e.name === "AbortError" ?
+      "保存をキャンセルしました。同じ分冊を再試行できます。" :
+      "ZIP作成・保存失敗：" + errorText(e);
+  } finally {
+    exporting = false;
+    el("share-close").disabled = false;
+    updateControls(); refreshExportLabel();
+  }
+}
+async function shareOrExport() {
+  if (exporting || updating) return;
+  if (!preparedShare) return exportZip();
+  const {file,name} = preparedShare;
+  exporting = true; updateControls(); refreshExportLabel();
+  el("share-close").disabled = true;
+  try {
+    await navigator.share({files:[file],title:"SomnoLog 睡眠記録"});
+    finishExportPart();
+  } catch (e) {
+    if (e.name === "AbortError") {
+      el("share-status").textContent = "共有をキャンセルしました。同じ分冊を再共有できます。";
+    } else {
+      downloadBlob(file,name); finishExportPart();
     }
-
+  } finally {
+    exporting = false;
+    el("share-close").disabled = false;
+    updateControls(); refreshExportLabel();
+  }
+}
     function updateClock() {
       const d = new Date();
       const text = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -2517,6 +2594,7 @@ registerProcessor("somnolog-100ms", SomnoWindowProcessor);
       }
     }
 
+    initializePatientId();
     initialize();
   })();
     </script>
