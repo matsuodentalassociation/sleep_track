@@ -298,10 +298,11 @@
 
   <script>
 
+
 (() => {
 "use strict";
 
-const APP_VERSION = "v20261009-03";
+const APP_VERSION = "v20261009-03-ui01";
 const BUILD_MARKER = "SOMNOLOG_FROZEN_UI_PHASE2";
 const REPOSITORY = "matsuodentalassociation/sleep_track";
 const REPOSITORY_BRANCH = "main";
@@ -1854,22 +1855,7 @@ window.alert(errorText(error));
 }
 }
 
-// 正本に更新ボタンを追加せず、既存見出しを更新操作の入口に使う。
-el("capture-heading").title =
-`${APP_VERSION}／タップでGitHub最新版取得またはキャッシュ回避再読み込み`;
-el("capture-heading").addEventListener("click", () => {
-if (recording || starting || stopping || updating) {
-showMessage("更新できません", "記録終了後に操作してください。");
-return;
-}
-if (window.confirm(
-`${APP_VERSION}\nGitHubの最新コミットから最新版を取得しますか？`)) {
-void applyLatestGitHub();
-} else if (window.confirm(
-"キャッシュを回避して公開ページを再読み込みしますか？")) {
-void reloadWithoutCache();
-}
-});
+// 更新操作は常設ボタンへ移行。
 
 el("microphone-permission").addEventListener("click", () => {
 if (!ownsRuntime || recording || starting || updating) return;
@@ -2028,7 +2014,7 @@ showMessage("記録・履歴の使い方",
 + "停止後、保存・共有からカレンダーに登録できます。"
 + "Phase 2では音声保存と中断回復を検証します。"
 + "実測メーターを利用できます。検出時間・保存波形はPhase 3、ZIPはPhase 4です。"
-+ "更新は開始画面のSomnoLog見出しをタップしてください。");
++ "更新は開始画面の「更新を確認・適用」を押してください。");
 });
 });
 
@@ -2130,8 +2116,111 @@ showMessage("初期化できません", errorText(error));
 }
 
 startMeterTimer();
+
+// SOMNOLOG_VISIBLE_UPDATE_UI_01
+function installVisibleUpdateUI() {
+if (document.getElementById("somnolog-update-panel")) {
+throw new Error("更新UIが重複しています。");
+}
+const header = el("capture-heading").parentElement;
+const panel = document.createElement("div");
+panel.id = "somnolog-update-panel";
+panel.style.cssText = "margin-top:12px;display:grid;gap:10px";
+
+const version = document.createElement("p");
+version.id = "somnolog-version";
+version.textContent = "バージョン：" + APP_VERSION;
+version.style.cssText =
+"margin:0;color:#bfdbd1;font-size:13px;overflow-wrap:anywhere";
+
+const status = document.createElement("p");
+status.id = "somnolog-update-status";
+status.setAttribute("role", "status");
+status.style.cssText =
+"margin:0;color:#aebbc9;font-size:12px;line-height:1.7";
+
+const updateButton = document.createElement("button");
+updateButton.id = "somnolog-update-button";
+updateButton.type = "button";
+updateButton.className = "control history";
+updateButton.textContent = "更新を確認・適用";
+
+const reloadButton = document.createElement("button");
+reloadButton.id = "somnolog-reload-button";
+reloadButton.type = "button";
+reloadButton.className = "control history";
+reloadButton.textContent = "ページを再読み込み";
+
+panel.append(version,updateButton,reloadButton,status);
+header.append(panel);
+el("capture-heading").title = "SomnoLog " + APP_VERSION;
+
+function blocked() {
+return Boolean(recording || starting || stopping ||
+pendingChunks || updating || disposed);
+}
+
+function refresh() {
+updateButton.disabled = blocked();
+reloadButton.disabled = blocked();
+status.textContent = recording || starting || stopping || pendingChunks
+? "録音・保存中は更新できません。"
+: updating ? "更新処理中です。確認画面に従ってください。"
+: "起動中：" + APP_VERSION + "。更新結果は確認画面に表示します。";
+}
+
+updateButton.addEventListener("click", async () => {
+if (blocked()) return;
+try {
+const task = applyLatestGitHub();
+refresh();
+await task;
+} catch (error) {
+if (!disposed) showMessage("更新確認に失敗",errorText(error));
+} finally {
+if (!disposed) refresh();
+}
+});
+
+reloadButton.addEventListener("click", async () => {
+if (blocked()) return;
+if (!window.confirm(
+"公開ページをキャッシュ回避用URLで再読み込みしますか？\n" +
+"保存済み記録は削除しません。未保存の画面状態は失われます。"
+)) return;
+try {
+const task = reloadWithoutCache();
+refresh();
+await task;
+} catch (error) {
+if (!disposed) showMessage("再読み込みに失敗",errorText(error));
+} finally {
+if (!disposed) refresh();
+}
+});
+
+let timer = null;
+function stopUI() {
+clearInterval(timer);
+timer = null;
+}
+function startUI() {
+if (disposed || timer !== null) return;
+refresh();
+timer = setInterval(() => {
+if (disposed) { stopUI(); return; }
+refresh();
+},300);
+}
+window.addEventListener("pagehide",stopUI);
+window.addEventListener("pageshow",startUI);
+startUI();
+}
+installVisibleUpdateUI();
+
 void initialize();
 })();
+
 
 </script>
   </body>
