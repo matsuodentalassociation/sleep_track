@@ -1,259 +1,129 @@
 <!DOCTYPE html>
-<html lang="ja" data-somnolog-version="005">
+<html lang="ja">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SomnoLog v005</title>
+  <title>SomnoLog</title>
   <style>
-    :root {
-      color-scheme: dark;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif;
-      background: #101419;
-      color: #f0eee6;
-    }
-    * { box-sizing: border-box; }
-    body { margin: 0; }
-    button { font: inherit; cursor: pointer; }
-    [hidden] { display: none !important; }
-    button:disabled { cursor: not-allowed; }
-    button:focus-visible, [tabindex]:focus-visible {
-      outline: 3px solid #9bd5ff;
-      outline-offset: 4px;
-    }
-    #capture-screen {
-      width: 100%; max-width: 480px; min-height: 100svh;
-      margin: auto; padding: 28px 20px;
-      display: flex; flex-direction: column; gap: 28px;
-    }
-    #capture-screen h1 { margin: 0; font-size: 23px; letter-spacing: .02em; }
-    #capture-screen .meters {
-      padding: 22px; background: #192029;
-      border: 1px solid #2c3744; border-radius: 20px;
-    }
-    #capture-screen .signal + .signal { margin-top: 26px; }
-    #capture-screen .label { margin-bottom: 10px; color: #bec8d3; font-size: 14px; }
-    #capture-screen .wave {
-      height: 72px; background: #111820;
-      border-radius: 12px; overflow: hidden;
-    }
-    #capture-screen svg { width: 100%; height: 100%; display: block; }
-    #capture-screen .permission {
-      width: 100%; min-height: 50px; margin-top: 12px;
-      padding: 12px; background: #253c50; color: #e5f1fb;
-      border: 1px solid #4a7596; border-radius: 12px;
-      font-size: 14px; font-weight: 600;
-    }
-    #capture-screen .permission:hover { background: #304c64; }
-    #capture-screen .controls { margin-top: auto; display: grid; gap: 12px; }
-    #capture-screen .row { display: grid; grid-template-columns: 2fr 1fr; gap: 12px; }
-    #capture-screen .control {
-      min-height: 62px; border: 1px solid #3c495a;
-      border-radius: 15px; font-size: 17px; font-weight: 600;
-    }
-    #capture-screen .start { background: #84b9cf; color: #10202a; border-color: #84b9cf; }
-    #capture-screen .start:disabled {
-      background: #294354; color: #99aebb; border-color: #355268;
-    }
-    #capture-screen .stop { background: #222a34; color: #8390a0; }
-    #capture-screen .stop:not(:disabled) { color: #f0eee6; }
-    #capture-screen .black {
-      min-height: 54px; background: #151b23;
-      color: #8390a0; font-size: 15px;
-    }
-    #capture-screen .black:not(:disabled) { color: #d3dde7; }
-    #capture-screen .usage {
-      width: 100%; min-height: 54px; padding: 14px 20px;
-      border: 1px solid #726b59; border-radius: 15px;
-      background: #343129; color: #f3e7c9;
-      font-size: 15px; font-weight: 600;
-    }
-    #capture-screen .usage:hover { background: #454034; }
-    #usage-dialog {
-      width: calc(100% - 32px); max-width: 440px;
-      max-height: 85svh; overflow: auto; padding: 26px;
-      background: #192029; color: #f0eee6;
-      border: 1px solid #3c495a; border-radius: 20px;
-    }
-    dialog::backdrop { background: rgba(0,0,0,.75); }
-    #usage-dialog h2 { margin: 0 0 22px; font-size: 21px; }
-    #usage-dialog ol { margin: 0; padding-left: 24px; }
-    #usage-dialog li {
-      padding-left: 4px; margin-bottom: 18px;
-      line-height: 1.8; color: #d1d7de;
-    }
-    #usage-dialog li strong { color: #f0eee6; }
-    #usage-dialog p { line-height: 1.8; color: #d1d7de; }
-    .close {
-      width: 100%; min-height: 48px; margin-top: 12px;
-      background: #293644; color: #f0eee6;
-      border: 1px solid #45576a; border-radius: 12px;
-    }
-    .app {
-      max-width: 480px; min-height: 100svh; margin: auto;
-      padding: 28px 20px; display: flex; flex-direction: column; gap: 24px;
-    }
-    .app .row {
-      display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    }
-    .app h1 { margin: 0; font-size: 23px; }
-    .app h2 { margin: 22px 0 10px; font-size: 20px; }
-    .badge {
-      padding: 7px 12px; border-radius: 20px; background: #263b38;
-      color: #bfdbd1; font-size: 13px; white-space: nowrap;
-    }
-    .subtitle, .note {
-      margin: 0; color: #aebbc9; font-size: 13px; line-height: 1.8;
-    }
-    .note { font-size: 11px; color: #8392a2; }
-    #sound-level-status { margin-top: 10px; min-height: 40px; }
-    .panel, .card {
-      background: #192029; border: 1px solid #2c3744;
-      border-radius: 16px; padding: 18px;
-    }
-    .action {
-      width: 100%; min-height: 56px; padding: 14px 18px;
-      border-radius: 15px; border: 1px solid #45576a;
-      font-weight: 600; font-size: 16px;
-    }
-    .action:disabled { opacity: .45; }
-    .primary { background: #84b9cf; color: #10202a; border-color: #84b9cf; }
-    .secondary { background: #253c50; color: #e5f1fb; }
-    .back { background: #1b232d; color: #d3dde7; }
-    .app .usage { background: #343129; color: #f3e7c9; border-color: #726b59; }
-    .actions, .bottom { display: grid; gap: 12px; }
-    .bottom { margin-top: auto; padding-top: 12px; }
-    .record-range {
-      margin: 0; padding: 14px 10px; border-left: 3px solid #84b9cf;
-      background: #192029; border-radius: 0 12px 12px 0;
-      color: #f3e7c9; font-size: 13px; line-height: 1.8;
-      white-space: nowrap; overflow-x: auto;
-    }
-    .duration {
-      display: flex; align-items: baseline; justify-content: space-between;
-      gap: 12px; margin-top: 16px;
-    }
-    .app .label { color: #b7c2ce; font-size: 14px; }
-    .value {
-      color: #f3e7c9; font-size: 23px; font-weight: 600;
-      white-space: nowrap; font-variant-numeric: tabular-nums;
-    }
-    .value small { font-size: 14px; font-weight: 400; }
-    .totals {
-      margin: 18px 0 0; padding-top: 16px; border-top: 1px solid #303b48;
-      display: grid; grid-template-columns: 1fr auto;
-      gap: 18px 12px; align-items: baseline;
-    }
-    dt { color: #c5cfd9; font-size: 14px; }
-    dd { margin: 0; text-align: right; }
-    .switch {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px;
-      background: #101923; border: 1px solid #303b48;
-      border-radius: 13px; margin-bottom: 12px;
-    }
-    .switch button {
-      min-height: 44px; padding: 10px 4px; border: 0; border-radius: 9px;
-      background: transparent; color: #aebbc9; font-size: 14px;
-    }
-    .switch button.active { background: #253c50; color: #e5f1fb; }
-    .hint { margin: 0 0 16px; color: #b7c2ce; font-size: 12px; line-height: 1.8; min-height: 22px; }
-    .month-nav {
-      display: flex; align-items: center; justify-content: space-between;
-      gap: 8px; margin-bottom: 16px;
-    }
-    .month-title { margin: 0; font-size: 20px; }
-    .arrow {
-      width: 44px; min-height: 44px; padding: 0;
-      background: #25313e; color: #d3dde7;
-      border: 1px solid #45576a; border-radius: 12px; font-size: 25px;
-    }
-    .weekdays, .days { display: grid; grid-template-columns: repeat(7,minmax(0,1fr)); gap: 4px; }
-    .weekdays { margin-bottom: 8px; }
-    .weekdays span { text-align: center; padding: 5px 0; font-size: 12px; color: #aebbc9; }
-    .weekdays .sun, .day.sun { color: #d8a6a1; }
-    .weekdays .sat, .day.sat { color: #84b9cf; }
-    .day {
-      min-height: 48px; padding: 6px 0; border: 1px solid transparent; border-radius: 10px;
-      background: transparent; color: #e0e6ec; font-size: 15px; font-weight: 400;
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px;
-    }
-    .day:hover { background: #263341; }
-    .day.today { border-color: #64798b; }
-    .day.in-range { background: #253c50; color: #e5f1fb; }
-    .day.selected { background: #84b9cf; color: #10202a; font-weight: 700; border-color: #84b9cf; }
-    .dot { height: 5px; width: 5px; border-radius: 50%; background: #84b9cf; }
-    .dot.empty { background: transparent; }
-    .selected .dot:not(.empty) { background: #10202a; }
-    .legend {
-      margin-top: 16px; padding-top: 14px; border-top: 1px solid #303b48;
-      display: flex; align-items: center; gap: 8px; color: #aebbc9; font-size: 11px; flex-wrap: wrap;
-    }
-    .legend-today { width: 12px; height: 12px; border: 1px solid #64798b; border-radius: 3px; margin-left: 8px; }
-    .range-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 14px; }
-    .range-label { color: #bfdbd1; font-size: 12px; line-height: 1.7; }
-    .reset {
-      min-height: 36px; padding: 7px 10px; background: #1b232d; color: #aebbc9;
-      font-size: 12px; border: 1px solid #45576a; border-radius: 8px;
-    }
-    .section-title { font-size: 17px; margin: 0 0 12px; line-height: 1.7; }
-    .share-panel { padding: 16px; background: #192029; border: 1px solid #2c3744; border-radius: 16px; margin: 16px 0; }
-    .share-panel p { margin: 0 0 12px; font-size: 12px; color: #aebbc9; line-height: 1.8; }
-    .card { margin-bottom: 12px; }
-    .saved { font-size: 12px; color: #bfdbd1; }
-    .card-time { margin: 12px 0 0; color: #f3e7c9; font-size: 13px; line-height: 1.8; font-variant-numeric: tabular-nums; }
-    .timeline { margin: 18px 0 0; padding-top: 16px; border-top: 1px solid #303b48; }
-    .timeline-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
-    .timeline-title { font-size: 14px; font-weight: 600; color: #c5cfd9; }
-    .sample { font-size: 10px; color: #c9bea6; background: #343129; padding: 3px 6px; border-radius: 5px; }
-    .chart { background: #101923; border: 1px solid #2c3744; border-radius: 12px; overflow: hidden; padding: 10px 6px 8px; }
-    .chart svg { display: block; width: 100%; height: auto; }
-    .endpoints { display: flex; justify-content: space-between; margin-top: 10px; font-size: 12px; line-height: 1.7; color: #aebbc9; }
-    .endpoints strong { display: block; color: #f3e7c9; font-size: 13px; font-weight: 500; }
-    .endpoints > div:last-child { text-align: right; }
-    .empty-state { border: 1px dashed #3c495a; border-radius: 16px; padding: 24px 14px; text-align: center; font-size: 14px; color: #aebbc9; line-height: 1.8; }
-    .flow-dialog {
-      width: calc(100% - 32px); max-width: 440px;
-      max-height: calc(100svh - 40px); overflow-y: auto;
-      background: #192029; color: #f0eee6;
-      border: 1px solid #3c495a; border-radius: 20px; padding: 24px;
-    }
-    .flow-dialog h2 { margin: 0 0 12px; font-size: 21px; }
-    .flow-dialog p, .flow-dialog li { font-size: 13px; line-height: 1.8; color: #c5cfd9; }
-    .zip-summary { padding: 14px; background: #101923; border-radius: 12px; margin: 16px 0; }
-    .zip-summary strong { display: block; color: #f3e7c9; font-size: 15px; margin-bottom: 6px; }
-    .filename { font-size: 11px; color: #aebbc9; overflow-wrap: anywhere; }
-    .choice { display: block; text-align: left; }
-    .choice small { display: block; font-size: 12px; font-weight: 400; margin-top: 6px; line-height: 1.7; }
-    .footer { margin-top: 20px; padding-top: 18px; border-top: 1px solid #303b48; }
-    .warning { padding: 12px; border-left: 3px solid #b9a67e; background: #292820; border-radius: 0 8px 8px 0; }
-    #black-screen {
-      position: fixed; inset: 0; z-index: 100; background: #080a0c;
-      display: flex; align-items: center; justify-content: center; padding: 24px; touch-action: manipulation;
-    }
-    #black-screen[data-clock-state="off"] { background: #000; }
-    .black-content { width: 100%; max-width: 400px; text-align: center; }
-    #black-clock {
-      display: block; font-size: 72px; font-weight: 300; letter-spacing: 2px;
-      font-variant-numeric: tabular-nums; color: #756f61;
-    }
-    #black-screen[data-clock-state="bright"] #black-clock { color: #f3e7c9; }
-    #black-back {
-      min-height: 48px; margin-top: 28px; padding: 12px 24px;
-      background: transparent; border: 1px solid #514c41;
-      border-radius: 14px; color: #aaa18e; font-size: 14px;
-    }
-    #black-screen[data-clock-state="off"] .black-content { visibility: hidden; }
-    @media (max-width: 360px) {
-      .app { padding: 24px 14px; }
-      .calendar { padding: 14px 10px; }
-      .day { min-height: 44px; }
-      .card { padding: 14px; }
-      .flow-dialog { padding: 20px; }
-      .record-range { font-size: 12px; }
-      #black-clock { font-size: 60px; }
+    :root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;background:#101419;color:#f0eee6}
+    *{box-sizing:border-box}body{margin:0}button{font:inherit;cursor:pointer}
+    [hidden]{display:none!important}button:disabled{cursor:not-allowed}
+    button:focus-visible,[tabindex]:focus-visible{outline:3px solid #9bd5ff;outline-offset:4px}
+    #capture-screen{width:100%;max-width:480px;min-height:100svh;margin:auto;padding:28px 20px;display:flex;flex-direction:column;gap:28px}
+    #capture-screen h1{margin:0;font-size:23px;letter-spacing:.02em}
+    #capture-screen .meters{padding:22px;background:#192029;border:1px solid #2c3744;border-radius:20px}
+    #capture-screen .signal+.signal{margin-top:26px}
+    #capture-screen .label{margin-bottom:10px;color:#bec8d3;font-size:14px}
+    #capture-screen .wave{height:72px;background:#111820;border-radius:12px;overflow:hidden}
+    #capture-screen svg{width:100%;height:100%;display:block}
+    #capture-screen .permission{width:100%;min-height:50px;margin-top:12px;padding:12px;background:#253c50;color:#e5f1fb;border:1px solid #4a7596;border-radius:12px;font-size:14px;font-weight:600}
+    #capture-screen .permission:hover{background:#304c64}
+    #capture-screen .controls{margin-top:auto;display:grid;gap:12px}
+    #capture-screen .row{display:grid;grid-template-columns:2fr 1fr;gap:12px}
+    #capture-screen .control{min-height:62px;border:1px solid #3c495a;border-radius:15px;font-size:17px;font-weight:600}
+    #capture-screen .start{background:#84b9cf;color:#10202a;border-color:#84b9cf}
+    #capture-screen .start:disabled{background:#294354;color:#99aebb;border-color:#355268}
+    #capture-screen .stop{background:#222a34;color:#8390a0}
+    #capture-screen .black{min-height:54px;background:#151b23;color:#8390a0;font-size:15px}
+    #capture-screen .history{min-height:54px;background:#253c50;color:#e5f1fb;border-color:#45576a;font-size:15px}
+    #capture-screen .history:disabled{opacity:.45}
+    #capture-screen .usage{width:100%;min-height:54px;padding:14px 20px;border:1px solid #726b59;border-radius:15px;background:#343129;color:#f3e7c9;font-size:15px;font-weight:600}
+    #capture-screen .usage:hover{background:#454034}
+    #usage-dialog,#preview-dialog{width:calc(100% - 32px);max-width:440px;max-height:85svh;overflow:auto;padding:26px;background:#192029;color:#f0eee6;border:1px solid #3c495a;border-radius:20px}
+    dialog::backdrop{background:rgba(0,0,0,.75)}
+    #usage-dialog h2,#preview-dialog h2{margin:0 0 22px;font-size:21px}
+    #usage-dialog ol{margin:0;padding-left:24px}
+    #usage-dialog li{padding-left:4px;margin-bottom:18px;line-height:1.8;color:#d1d7de}
+    #usage-dialog li strong{color:#f0eee6}
+    #usage-dialog p,#preview-dialog p{line-height:1.8;color:#d1d7de}
+    .close{width:100%;min-height:48px;margin-top:12px;background:#293644;color:#f0eee6;border:1px solid #45576a;border-radius:12px}
+    .app{max-width:480px;min-height:100svh;margin:auto;padding:28px 20px;display:flex;flex-direction:column;gap:24px}
+    .app .row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .app h1{margin:0;font-size:23px}.app h2{margin:22px 0 10px;font-size:20px}
+    .badge{padding:7px 12px;border-radius:20px;background:#263b38;color:#bfdbd1;font-size:13px;white-space:nowrap}
+    .subtitle,.note{margin:0;color:#aebbc9;font-size:13px;line-height:1.8}
+    .note{font-size:11px;color:#8392a2}
+    .panel,.card{background:#192029;border:1px solid #2c3744;border-radius:16px;padding:18px}
+    .action{width:100%;min-height:56px;padding:14px 18px;border-radius:15px;border:1px solid #45576a;font-weight:600;font-size:16px}
+    .action:disabled{opacity:.45}
+    .primary{background:#84b9cf;color:#10202a;border-color:#84b9cf}
+    .secondary{background:#253c50;color:#e5f1fb}.back{background:#1b232d;color:#d3dde7}
+    .app .usage{background:#343129;color:#f3e7c9;border-color:#726b59}
+    .actions,.bottom{display:grid;gap:12px}.bottom{margin-top:auto;padding-top:12px}
+    .record-range{margin:0;padding:14px 10px;border-left:3px solid #84b9cf;background:#192029;border-radius:0 12px 12px 0;color:#f3e7c9;font-size:13px;line-height:1.8;white-space:nowrap;overflow-x:auto}
+    .duration{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:16px}
+    .app .label{color:#b7c2ce;font-size:14px}
+    .value{color:#f3e7c9;font-size:23px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+    .value small{font-size:14px;font-weight:400}
+    .totals{margin:18px 0 0;padding-top:16px;border-top:1px solid #303b48;display:grid;grid-template-columns:1fr auto;gap:18px 12px;align-items:baseline}
+    dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
+    .switch{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:#101923;border:1px solid #303b48;border-radius:13px;margin-bottom:12px}
+    .switch button{min-height:44px;padding:10px 4px;border:0;border-radius:9px;background:transparent;color:#aebbc9;font-size:14px}
+    .switch button.active{background:#253c50;color:#e5f1fb}
+    .hint{margin:0 0 16px;color:#b7c2ce;font-size:12px;line-height:1.8;min-height:22px}
+    .month-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}
+    .month-title{margin:0;font-size:20px}
+    .arrow{width:44px;min-height:44px;padding:0;background:#25313e;color:#d3dde7;border:1px solid #45576a;border-radius:12px;font-size:25px}
+    .weekdays,.days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+    .weekdays{margin-bottom:8px}.weekdays span{text-align:center;padding:5px 0;font-size:12px;color:#aebbc9}
+    .weekdays .sun,.day.sun{color:#d8a6a1}.weekdays .sat,.day.sat{color:#84b9cf}
+    .day{min-height:48px;padding:6px 0;border:1px solid transparent;border-radius:10px;background:transparent;color:#e0e6ec;font-size:15px;font-weight:400;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px}
+    .day:hover{background:#263341}.day.today{border-color:#64798b}
+    .day.in-range{background:#253c50;color:#e5f1fb}
+    .day.selected{background:#84b9cf;color:#10202a;font-weight:700;border-color:#84b9cf}
+    .dot{height:5px;width:5px;border-radius:50%;background:#84b9cf}
+    .dot.empty{background:transparent}.selected .dot:not(.empty){background:#10202a}
+    .legend{margin-top:16px;padding-top:14px;border-top:1px solid #303b48;display:flex;align-items:center;gap:8px;color:#aebbc9;font-size:11px;flex-wrap:wrap}
+    .legend-today{width:12px;height:12px;border:1px solid #64798b;border-radius:3px;margin-left:8px}
+    .range-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:14px}
+    .range-label{color:#bfdbd1;font-size:12px;line-height:1.7}
+    .reset{min-height:36px;padding:7px 10px;background:#1b232d;color:#aebbc9;font-size:12px;border:1px solid #45576a;border-radius:8px}
+    .section-title{font-size:17px;margin:0 0 12px;line-height:1.7}
+    .share-panel{padding:16px;background:#192029;border:1px solid #2c3744;border-radius:16px;margin:16px 0}
+    .share-panel p{margin:0 0 12px;font-size:12px;color:#aebbc9;line-height:1.8}
+    .card{margin-bottom:12px}.saved{font-size:12px;color:#bfdbd1}
+    .card-time{margin:12px 0 0;color:#f3e7c9;font-size:13px;line-height:1.8;font-variant-numeric:tabular-nums}
+    .timeline{margin:18px 0 0;padding-top:16px;border-top:1px solid #303b48}
+    .timeline-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
+    .timeline-title{font-size:14px;font-weight:600;color:#c5cfd9}
+    .sample{font-size:10px;color:#c9bea6;background:#343129;padding:3px 6px;border-radius:5px}
+    .chart{background:#101923;border:1px solid #2c3744;border-radius:12px;overflow:hidden;padding:10px 6px 8px}
+    .chart svg{display:block;width:100%;height:auto}
+    .endpoints{display:flex;justify-content:space-between;margin-top:10px;font-size:12px;line-height:1.7;color:#aebbc9}
+    .endpoints strong{display:block;color:#f3e7c9;font-size:13px;font-weight:500}
+    .endpoints>div:last-child{text-align:right}
+    .empty-state{border:1px dashed #3c495a;border-radius:16px;padding:24px 14px;text-align:center;font-size:14px;color:#aebbc9;line-height:1.8}
+    .flow-dialog{width:calc(100% - 32px);max-width:440px;max-height:calc(100svh - 40px);overflow-y:auto;background:#192029;color:#f0eee6;border:1px solid #3c495a;border-radius:20px;padding:24px}
+    .flow-dialog h2{margin:0 0 12px;font-size:21px}
+    .flow-dialog p,.flow-dialog li{font-size:13px;line-height:1.8;color:#c5cfd9}
+    .zip-summary{padding:14px;background:#101923;border-radius:12px;margin:16px 0}
+    .zip-summary strong{display:block;color:#f3e7c9;font-size:15px;margin-bottom:6px}
+    .filename{font-size:11px;color:#aebbc9;overflow-wrap:anywhere}
+    .choice{display:block;text-align:left}
+    .choice small{display:block;font-size:12px;font-weight:400;margin-top:6px;line-height:1.7}
+    .footer{margin-top:20px;padding-top:18px;border-top:1px solid #303b48}
+    .warning{padding:12px;border-left:3px solid #b9a67e;background:#292820;border-radius:0 8px 8px 0}
+    #black-screen{position:fixed;inset:0;z-index:100;background:#080a0c;display:flex;align-items:center;justify-content:center;padding:24px;touch-action:manipulation}
+    #black-screen[data-clock-state="off"]{background:#000}
+    .black-content{width:100%;max-width:400px;text-align:center}
+    #black-clock{display:block;font-size:72px;font-weight:300;letter-spacing:2px;font-variant-numeric:tabular-nums;color:#756f61}
+    #black-screen[data-clock-state="bright"] #black-clock{color:#f3e7c9}
+    #black-back{min-height:48px;margin-top:28px;padding:12px 24px;background:transparent;border:1px solid #514c41;border-radius:14px;color:#aaa18e;font-size:14px}
+    #black-screen[data-clock-state="off"] .black-content{visibility:hidden}
+    @media(max-width:360px){
+      .app{padding:24px 14px}.calendar{padding:14px 10px}.day{min-height:44px}
+      .card{padding:14px}.flow-dialog{padding:20px}.record-range{font-size:12px}#black-clock{font-size:60px}
     }
   </style>
 </head>
 <body>
+  <!--
+    記録開始画面は提供HTMLを基準とする。
+    今回追加: history-button / .history / openCalendar(from) / calendarReturnScreen
+    元のstart、usage-dialog、preview-dialog、data-permissionを維持。
+    record-screenは記録終了画面。
+    全イベントはscript内。権限・録音・保存・ZIP生成はUIデモのみ。
+  -->
   <main id="capture-screen" aria-labelledby="capture-heading">
     <header><h1 id="capture-heading" tabindex="-1">SomnoLog</h1></header>
     <section class="meters" aria-label="マイクと体動の入力メーター">
@@ -265,8 +135,6 @@
             <path id="microphone-path" d="M0 36H320" stroke="#7190a6" stroke-width="2" fill="none"/>
           </svg>
         </div>
-        <p id="sound-level-status" class="note">マイク許可後に相対音量を表示。記録開始後10秒は環境音測定。</p>
-        <p id="microphone-status" class="note" role="status">マイク：未取得</p>
         <button id="microphone-permission" class="permission" type="button" data-permission="microphone">マイクを許可</button>
       </div>
       <div class="signal">
@@ -277,16 +145,8 @@
             <path id="motion-path" d="M0 36H320" stroke="#7190a6" stroke-width="2" fill="none"/>
           </svg>
         </div>
-        <p id="motion-status" class="note" role="status">体動：未取得。音声のみ記録できます。</p>
         <button id="motion-permission" class="permission" type="button" data-permission="motion">モーションセンサーを許可</button>
       </div>
-    </section>
-    <section class="meters" aria-label="匿名ID">
-      <label for="anonymous-id" class="label">匿名ID（氏名は入力しない）</label>
-      <input id="anonymous-id" type="text" maxlength="64" autocomplete="off"
-        spellcheck="false" pattern="[A-Za-z0-9_-]{6,64}"
-        style="width:100%;padding:12px;margin-top:10px;border:1px solid #45576a;border-radius:10px;background:#101923;color:#f0eee6">
-      <p class="note">自動IDまたは受付発行ID。変更は次の記録から適用します。</p>
     </section>
     <section class="controls" aria-label="記録操作">
       <div class="row">
@@ -294,13 +154,8 @@
         <button id="stop-button" class="control stop" type="button" disabled>停止</button>
       </div>
       <button id="black-button" class="control black" type="button" disabled>黒画面に切り替え</button>
+      <button id="history-button" class="control history" type="button">履歴を見る</button>
       <button id="capture-help-button" class="usage" type="button" aria-haspopup="dialog">使い方を見る</button>
-    </section>
-    <section aria-label="アプリ更新">
-      <p class="note">SomnoLog v005 · 独立WAV／音声対応表／分冊ZIP · 実機未検証</p>
-      <button id="app-reload" class="usage" type="button">キャッシュ回避で再読込</button>
-      <button id="app-update" class="usage" type="button" style="margin-top:12px">GitHub最新版を取得・適用</button>
-      <p id="app-update-status" class="note" role="status"></p>
     </section>
   </main>
 
@@ -308,18 +163,18 @@
     <header>
       <div class="row"><h1>SomnoLog</h1><span class="badge">記録終了</span></div>
       <h2 id="result-heading" tabindex="-1">睡眠記録</h2>
-      <p id="result-range" class="record-range">記録はまだありません</p>
-      <p id="result-year" class="note" style="margin-top:10px"></p>
+      <p id="result-range" class="record-range">昨日（10月6日）23:10 → 今日（10月7日）06:42</p>
+      <p id="result-year" class="note" style="margin-top:10px">2026年の記録</p>
     </header>
     <section class="panel" aria-label="記録の概要">
       <div class="duration" style="margin-top:0">
         <span class="label">記録時間</span>
-        <span id="result-duration" class="value">0<small>時間</small>0<small>分</small></span>
+        <span id="result-duration" class="value">7<small>時間</small>32<small>分</small></span>
       </div>
-      <p id="result-time-detail" class="note" style="margin-top:8px"></p>
+      <p id="result-time-detail" class="note" style="margin-top:8px">10月6日 23:10 → 10月7日 06:42</p>
       <dl class="totals">
-        <dt>音の検出時間</dt><dd id="sound-duration" class="value">0<small>分</small>0<small>秒</small></dd>
-        <dt>体動の検出時間</dt><dd id="motion-duration" class="value">0<small>分</small>0<small>秒</small></dd>
+        <dt>音の検出時間</dt><dd id="sound-duration" class="value">18<small>分</small>24<small>秒</small></dd>
+        <dt>体動の検出時間</dt><dd id="motion-duration" class="value">6<small>分</small>12<small>秒</small></dd>
       </dl>
     </section>
     <section class="actions">
@@ -355,7 +210,8 @@
       <div id="days" class="days"></div>
       <div class="legend"><span class="dot"></span>保存記録あり<span class="legend-today"></span>今日</div>
       <div id="range-tools" class="range-tools" hidden>
-        <span id="range-label" class="range-label"></span><button id="reset-range" class="reset">選び直す</button>
+        <span id="range-label" class="range-label"></span>
+        <button id="reset-range" class="reset">選び直す</button>
       </div>
     </section>
     <section aria-labelledby="selected-heading">
@@ -365,10 +221,10 @@
         <p>選択した日のログを医師と共有します</p>
         <button id="share-button" class="action primary">ログを医師と共有</button>
       </div>
-      <p class="note">※音量・体動は実測値です。欠測は検出なしと区別します。記録開始時刻は入眠時刻ではありません。</p>
+      <p class="note">※記録・波形はサンプルです。記録開始時刻は、実際の入眠時刻を示すものではありません。</p>
     </section>
     <section class="bottom">
-      <button id="calendar-back" class="action back">記録終了画面に戻る</button>
+      <button id="calendar-back" class="action back">記録画面に戻る</button>
       <button id="calendar-help-button" class="action usage" data-help>使い方を見る</button>
     </section>
   </main>
@@ -385,42 +241,47 @@
     <ol>
       <li><strong>スマホを置く</strong><br>枕の近くの、スマホが落ちたりずれたりしない安定した場所に置いてください。</li>
       <li><strong>電源につなぐ</strong><br>充電ケーブルをつないでください。スマホは枕や布団の下に入れず、ケーブルが体に絡まないようにしてください。</li>
-      <li><strong>必要な権限を許可する</strong><br>マイクを許可してください。体動センサー未対応・拒否・無信号の場合は音声のみ記録でき、体動は欠測として保存します。HTTPSまたはlocalhostで使用してください。</li>
-      <li><strong>メーターを見る</strong><br>マイク許可後は仮の環境音基準で相対音量を表示します。この仮基準は記録の判定には使いません。dBFSは音圧dBではありません。</li>
-      <li><strong>記録開始後10秒は静かにする</strong><br>最初の10秒間の100ms窓から環境音の中央値を取得します。その後、基準より＋10dB以上の窓を検出します。最初の10秒は音の検出時間に加算しません。基準取得中に欠測・無信号があった場合は停止し、再記録を求めます。</li>
-      <li><strong>暗い画面で時刻を見る</strong><br>タップで明るく表示し、約3秒後に真っ黒になります。再タップで時計を表示します。1.5秒長押し、戻るボタン、Escapeで記録画面へ戻れます。録音停止は停止ボタンで行います。画面ロックや別アプリへの切替で録音が中断する場合があります。</li>
+      <li><strong>必要な権限を許可する</strong><br>「マイクを許可」「モーションセンサーを許可」が表示された場合は、ボタンを押して許可してください。許可済みの場合、ボタンは表示されません。</li>
+      <li><strong>メーターを見る</strong><br>音や動きに合わせて、マイク・体動のメーターが反応することを確認してください。</li>
+      <li><strong>記録を始めて、お休みください</strong><br>準備が整ったら「記録開始」を押してください。「黒画面に切り替え」で画面の光を抑えられます。</li>
+      <li><strong>暗い画面で時刻を見る</strong><br>中央に大きな時刻を、明るさを抑えたクリーム色で表示します。見えにくいときはタップすると文字が明るくなり、約3秒後に真っ黒になります。再びタップすると時刻を表示します。</li>
     </ol>
-    <p class="note">相対差で補正できるのは一定の入力感度差です。端末のAGC・ノイズ処理・飽和まで同一化するものではありません。音声は同じ入力から約10秒の独立WAVとして保存します。16kHz・モノラル・16bit。停止時100ms未満の端数は未収録です。</p>
+    <form method="dialog"><button class="close">閉じる</button></form>
+  </dialog>
+
+  <dialog id="preview-dialog" aria-labelledby="preview-title">
+    <h2 id="preview-title">デザインプレビュー</h2>
+    <p>権限取得後の画面状態を確認できます。このプレビューでは実際の録音は行いません。</p>
     <form method="dialog"><button class="close">閉じる</button></form>
   </dialog>
 
   <dialog id="save-dialog" class="flow-dialog" aria-labelledby="save-title">
     <h2 id="save-title">保存・共有</h2>
-    <p id="save-range" class="record-range"></p>
+    <p id="save-range" class="record-range">10月6日 23:10 → 10月7日 06:42</p>
     <div class="actions" style="margin-top:18px">
       <button id="save-calendar" class="action primary choice">記録をカレンダーに保存<small>日付から睡眠記録を確認できます</small></button>
       <button id="share-current" class="action secondary choice">音声付きデータを共有<small>医師への送付・SomnoGraph用</small></button>
     </div>
-    <p id="save-status" class="note" role="status">録音中から端末内へ自動保存します。カレンダー保存は登録確定です。</p>
+    <p id="save-status" class="note" role="status">※プレビューでは実際の保存は行いません。</p>
     <div class="footer"><form method="dialog"><button id="save-close" class="action back">閉じる</button></form></div>
   </dialog>
 
   <dialog id="share-dialog" class="flow-dialog" aria-labelledby="share-title">
     <h2 id="share-title">ログを医師と共有</h2>
-    <p>選択記録をZIPで共有します。直接保存APIがない場合は原則約20分の分冊を順番に保存・共有します。</p>
+    <p>選択した記録を、1つのZIPファイルにまとめて共有します。</p>
     <div class="zip-summary">
       <strong id="zip-period"></strong>
       <p id="zip-count" style="margin:0 0 10px"></p>
       <div id="zip-name" class="filename"></div>
     </div>
-    <p><strong>ZIPにまとめるデータ（zip-store-v1／スキーマ案）</strong></p>
+    <p><strong>ZIPにまとめるデータ（実装予定）</strong></p>
     <ul>
-      <li>各記録の開始・停止日時、記録時間、環境音基準</li>
-      <li>RMS・dBFS・相対dB・体動・欠測の時系列データ（JSON）</li>
-      <li>音声対応表と約10秒の独立WAV。旧録音は依存チャンクとして区別</li>
+      <li>各記録の開始・停止日時、記録時間</li>
+      <li>音量・体動の時系列データ（CSV）</li>
+      <li>記録一覧（CSV）</li>
     </ul>
-    <p class="warning">音声は端末内に元音声が残っている場合のみ添付できます。波形データから音声を復元することはできません。</p>
-    <p class="note">※ZIPは端末上で作成します。SomnoGraph互換性・医師への到達は未確認です。</p>
+    <p class="warning">音声ファイルは、端末内に元音声が残っている場合のみ添付できます。波形データから音声を復元することはできません。</p>
+    <p class="note">※このプレビューではZIP作成・保存・送信は行いません。</p>
     <div class="actions">
       <button id="zip-save" class="action primary choice">ZIPを作成して保存<small>保存後、メール添付や共有リンクで送付</small></button>
       <button id="clinic-button" class="action secondary">診療所の窓口で行う</button>
@@ -436,2169 +297,1648 @@
   </dialog>
 
   <script>
-"use strict";
-(() => {
-  /*
-   * SomnoLog v005
-   * 正本：SomnoLog v004.html / 修正版：SomnoLog v005.html
-   * 音声：AudioWorklet入力／16kHz PCM／約10秒の独立WAV
-   * 検出：AudioWorkletの100ms非重複窓／開始10秒中央値／相対+10dB
-   * dBFSは校正された音圧ではない。実機・終夜動作は未検証。
-   */
+  (() => {
+    "use strict";
 
-  const STAGED_UPDATE_KEY = "SomnoLog-staged-update:" + location.pathname;
-  const UPDATE_CACHE_KEY = "SomnoLog-verified-update:" + location.pathname;
+    const APP_VERSION = "v20261009-02";
+    const BUILD_MARKER = "SOMNOLOG_FROZEN_UI_PHASE2";
+    const REPOSITORY = "matsuodentalassociation/sleep_track";
+    const REPOSITORY_BRANCH = "main";
+    const REPOSITORY_FILE = "index.html";
+    const DB_NAME = "SomnoLog";
+    const DB_VERSION = 1;
+    const CHUNK_INTERVAL_MS = 30000;
+    const REQUESTED_SAMPLE_RATE = 22050;
+    const REQUESTED_BITRATE = 32000;
+    const LEASE_KEY = "__somnolog_runtime_lease__";
+    const LEASE_MS = 15000;
+    const el = id => document.getElementById(id);
+    const pad = n => String(n).padStart(2, "0");
+    const ownerId = crypto.randomUUID
+      ? crypto.randomUUID()
+      : Array.from(crypto.getRandomValues(new Uint32Array(4)))
+          .map(n => n.toString(16)).join("-");
+    const sessionSuffix = () =>
+      Array.from(crypto.getRandomValues(new Uint8Array(6)))
+        .map(n => n.toString(16).padStart(2, "0")).join("");
 
-  // 検証して利用者が適用したHTMLを同じオリジン・パスで保持する。
-  // document.write後の同じコミットでは再適用しないため、再帰を防止する。
-  try {
-    const staged = sessionStorage.getItem(STAGED_UPDATE_KEY);
-    if (staged) sessionStorage.removeItem(STAGED_UPDATE_KEY);
-    const cached = staged || localStorage.getItem(UPDATE_CACHE_KEY);
-    if (cached) {
-      const parsed = new DOMParser().parseFromString(cached, "text/html");
-      const candidate = Number(parsed.documentElement.dataset.somnologVersion);
-      const current = Number(document.documentElement.dataset.somnologVersion);
-      const sha = parsed.documentElement.dataset.somnologCommit;
-      if (
-        Number.isInteger(candidate) && candidate >= current &&
-        /^[a-f0-9]{40}$/.test(sha || "") &&
-        sha !== document.documentElement.dataset.somnologCommit
-      ) {
-        document.open();
-        document.write(cached);
-        document.close();
-        return;
-      }
+    // DOMが実測値や状態で変わる前に、更新互換性確認用の正本を保持する。
+    function frozenShell(doc) {
+      const copy = doc.documentElement.cloneNode(true);
+      copy.querySelectorAll("script").forEach(node => node.remove());
+      const walker = doc.createTreeWalker(copy, NodeFilter.SHOW_COMMENT);
+      const comments = [];
+      while (walker.nextNode()) comments.push(walker.currentNode);
+      comments.forEach(node => node.remove());
+      return copy.outerHTML;
     }
-  } catch (e) {
-    console.warn("更新キャッシュの読込をスキップ", e);
-  }
+    const expectedShell = frozenShell(document);
 
-  const CONFIG = Object.freeze({
-    formatVersion: "zip-store-v1", pcmSampleRate: 16000, sampleMs: 100, flushMs: 5000,
-    audioChunkMs: 10000, baselineMs: 10000, soundDeltaDb: 10.0,
-    motionThreshold: 0.35, motionFreshMs: 1500, gravityAlpha: 0.9,
-    maxPendingWrites: 8, staleMs: 120000,
-    memoryExportLimit: 128 * 1024 * 1024
-  });
-  const el = id => document.getElementById(id);
-  const pad = n => String(n).padStart(2, "0");
-  const dateKey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
-  const nowDate = new Date();
-  const today = dateKey(nowDate.getFullYear(), nowDate.getMonth(), nowDate.getDate());
-  const SVG_NS = "http://www.w3.org/2000/svg";
-  const UPDATE_REPO = "matsuodentalassociation/sleep_track";
-
-  let month = new Date(nowDate.getFullYear(), nowDate.getMonth(), 1);
-  let mode = "single", selected = today, rangeStart = null, rangeEnd = null;
-  let records = [], db = null, state = "boot", session = null, currentResult = null;
-  let micStream = null, audioContext = null, micSource = null, soundNode = null;
-  let flushTimer = null, clockHideTimer = null, longTimer = null;
-  let lastMotion = null, gravity = null, motionRequested = false;
-  let rows = [], chunkSeq = 0, batchSeq = 0, pendingWrites = 0;
-  let queue = Promise.resolve(), writeError = null, audioError = null;
-  let stopPromise = null, recordingUnlock = null, wakeLock = null;
-  let exporting = false, updating = false;
-  let shareRecords = [], shareReturn = "calendar", preparedShare = null;
-  let liveSound = [], liveMotion = [], animation = 0;
-  
-  let latestSoundWindow = null, soundWindowToken = null, previewDb = [];
-  let soundStopResolve = null, soundAudioOrigin = null, soundLastAudioEnd = null;
-  let soundCalibration = { values: [], elapsedMs: 0, baselineDb: null, invalid: false, failed: false };
-  let pcmParts = [], pcmFrames = 0, pcmStartOffset = 0, pcmSourceStart = 0, pcmExpectedEnd = null;
-let exportPlans = [], exportPlanIndex = 0;
-function initializePatientId() {
-  const input = el("anonymous-id");
-  let saved = "";
-  try { saved = localStorage.getItem("SomnoLog-anonymous-id") || ""; } catch {}
-  input.value = /^[A-Za-z0-9_-]{6,64}$/.test(saved) ?
-    saved : "anon-" + crypto.randomUUID();
-}
-
-function readPatientId() {
-  const value = el("anonymous-id").value.trim();
-  if (!/^[A-Za-z0-9_-]{6,64}$/.test(value))
-    throw new Error("匿名IDは半角英数字・ハイフン・下線の6〜64文字で入力してください。氏名は入力しないでください。");
-  try { localStorage.setItem("SomnoLog-anonymous-id", value); } catch {}
-  return value;
-}
-
-function makeWav(parts, frames) {
-  const bytes = new Uint8Array(44 + frames * 2);
-  const v = new DataView(bytes.buffer);
-  const ascii = (at, text) => {
-    for (let i = 0; i < text.length; i++) bytes[at + i] = text.charCodeAt(i);
-  };
-  ascii(0, "RIFF"); v.setUint32(4, 36 + frames * 2, true);
-  ascii(8, "WAVE"); ascii(12, "fmt ");
-  v.setUint32(16, 16, true);
-  v.setUint16(20, 1, true);
-  v.setUint16(22, 1, true);
-  v.setUint32(24, CONFIG.pcmSampleRate, true);
-  v.setUint32(28, CONFIG.pcmSampleRate * 2, true);
-  v.setUint16(32, 2, true);
-  v.setUint16(34, 16, true);
-  ascii(36, "data"); v.setUint32(40, frames * 2, true);
-  let at = 44;
-  for (const part of parts)
-    for (const value of part) {
-      v.setInt16(at, value, true);
-      at += 2;
-    }
-  return new Blob([bytes], {type:"audio/wav"});
-}
-
-function consumePCM(w) {
-  if (!(w.pcm instanceof Int16Array) || !w.pcm.length) {
-    audioError = audioError || new Error("音声PCMが欠落しました。");
-    queueMicrotask(() => { if (state === "recording") stopRecording("pcm-missing"); });
-    return;
-  }
-  if (soundAudioOrigin === null) soundAudioOrigin = w.audioStart;
-  const start = (w.audioStart - soundAudioOrigin) * 1000;
-  if (pcmExpectedEnd !== null && Math.abs(start - pcmExpectedEnd) > 1) {
-    flushPCM();
-    session.events.push({
-      utc:new Date().toISOString(),type:"audio-gap",
-      startOffsetMs:pcmExpectedEnd,endOffsetMs:start
-    });
-  }
-  if (!pcmParts.length) {
-    pcmStartOffset = start;
-    pcmSourceStart = w.audioStart;
-  }
-  pcmParts.push(w.pcm);
-  pcmFrames += w.pcm.length;
-  pcmExpectedEnd = (w.audioEnd - soundAudioOrigin) * 1000;
-  if (pcmFrames >= CONFIG.pcmSampleRate * CONFIG.audioChunkMs / 1000)
-    flushPCM();
-}
-
-function flushPCM() {
-  if (!session || !pcmFrames) return;
-  const frames = pcmFrames;
-  const startOffsetMs = pcmStartOffset;
-  const sourceAudioStartSeconds = pcmSourceStart;
-  const blob = makeWav(pcmParts, frames);
-  pcmParts = []; pcmFrames = 0;
-  const durationMs = frames / CONFIG.pcmSampleRate * 1000;
-  const seq = chunkSeq++;
-  session.audioChunkCount = chunkSeq;
-  session.audioBytes += blob.size;
-  session.heartbeatMs = Date.now();
-  session.lastDataMs = Math.max(session.lastDataMs, session.heartbeatMs);
-  const s = snapshot();
-  enqueue(() => saveActive(s, "audio", {
-    sessionId:s.id,seq,blob,mime:"audio/wav",
-    independentlyPlayable:true,
-    startOffsetMs,endOffsetMs:startOffsetMs + durationMs,
-    startMs:s.startMs + startOffsetMs,
-    endMs:s.startMs + startOffsetMs + durationMs,
-    durationFrames:frames,durationMs,sampleRate:CONFIG.pcmSampleRate,
-    channels:1,bitsPerSample:16,sourceAudioStartSeconds,
-    timestampBasis:"audio-context-sample-clock",
-    synchronization:"unverified"
-  }));
-}
-const ready = { microphone: false, motion: false };
-
-  function shortLabel(k) {
-    const [, m, d] = k.split("-").map(Number);
-    return `${m}月${d}日`;
-  }
-  function fullLabel(k) {
-    const [y, m, d] = k.split("-").map(Number);
-    return `${y}年${m}月${d}日`;
-  }
-  function periodLabel(a, b) {
-    return a === b ? shortLabel(a) :
-      a.slice(0, 4) !== b.slice(0, 4) ?
-        `${fullLabel(a)}〜${fullLabel(b)}` : `${shortLabel(a)}〜${shortLabel(b)}`;
-  }
-  function bounds() { return mode === "single" ? [selected, selected] : [rangeStart, rangeEnd]; }
-  function visibleRecords() {
-    const [a, b] = bounds();
-    return a && b ? records.filter(r => r.registered && r.date >= a && r.date <= b)
-      .sort((x, y) => x.startMs - y.startMs) : [];
-  }
-  function errorText(e) {
-    return e?.name === "QuotaExceededError" ?
-      "端末の保存容量が不足しています。" : e?.message || String(e);
-  }
-  function closeDialogs() {
-    document.querySelectorAll("dialog[open]").forEach(d => d.close());
-  }
-  function showMessage(title, text) {
-    closeDialogs();
-    el("message-title").textContent = title;
-    el("message-body").textContent = text;
-    el("message").showModal();
-  }
-  function showScreen(id) {
-    closeDialogs();
-    clearTimeout(clockHideTimer);
-    el("black-screen").hidden = true;
-    document.body.style.overflow = "";
-    ["capture-screen", "record-screen", "calendar-screen"].forEach(s => el(s).hidden = s !== id);
-    window.scrollTo(0, 0);
-    el(id === "capture-screen" ? "capture-heading" :
-      id === "record-screen" ? "result-heading" : "calendar-heading").focus();
-  }
-  function updateControls() {
-    el("start").disabled = state !== "idle" || !ready.microphone || !db || updating || exporting || permissionBusy;
-    el("stop-button").disabled = state !== "recording";
-    el("black-button").disabled = state !== "recording";
-    const busy = ["starting", "recording", "stopping"].includes(state) || updating || exporting || permissionBusy;
-    el("microphone-permission").disabled = busy;
-    el("motion-permission").disabled = busy;
-    el("save-button").disabled = !currentResult;
-    el("calendar-back").disabled = !currentResult;
-    el("save-calendar").disabled = !currentResult || !db;
-    for (const id of ["app-reload", "app-update"])
-      el(id).disabled = state !== "idle" || exporting || updating || permissionBusy;
-  }
-
-  function request(req) {
-    return new Promise((resolve, reject) => {
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  }
-  function transactionDone(tx) {
-    return new Promise((resolve, reject) => {
-      tx.oncomplete = () => resolve();
-      tx.onabort = () => reject(tx.error || new Error("保存トランザクションが中止されました"));
-      tx.onerror = () => {};
-    });
-  }
-  async function openDatabase() {
-    if (!window.indexedDB) throw new Error("この環境はIndexedDBに対応していません。");
-    const req = indexedDB.open("SomnoLogFunctionalDB", 1);
-    req.onupgradeneeded = () => {
-      const d = req.result;
-      d.createObjectStore("sessions", { keyPath: "id" });
-      for (const name of ["audio", "logs"]) {
-        const store = d.createObjectStore(name, { keyPath: ["sessionId", "seq"] });
-        store.createIndex("sessionId", "sessionId", { unique: false });
-      }
+    let db = null;
+    let disposed = false;
+    let ownsRuntime = false;
+    let releasingRuntime = null;
+    let leaseTimer = null;
+    let retryTimer = null;
+    let heartbeatTimer = null;
+    let chunkTimer = null;
+    let clockTimer = null;
+    let clockHideTimer = null;
+    let wakeLock = null;
+    let stream = null;
+    let audioContext = null;
+    let ready = { microphone: false, motion: false };
+    let motionListenerInstalled = false;
+    let lastMotionEvent = null;
+    let motionWaiter = null;
+    let recording = false;
+    let starting = false;
+    let stopping = false;
+    let updating = false;
+    let activeSession = null;
+    let currentSession = null;
+    let recorder = null;
+    let recorderStopPromise = null;
+    let recorderStopResolve = null;
+    let recordingStartMono = 0;
+    let lastChunkEventOffset = 0;
+    let sequence = 0;
+    let pendingChunks = 0;
+    let saveChain = Promise.resolve();
+    let recordingFault = null;
+    let records = [];
+    let calendarReturnScreen = "capture-screen";
+    const initialDate = new Date();
+    const dateKey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+    const todayKey = () => {
+      const n = new Date();
+      return dateKey(n.getFullYear(), n.getMonth(), n.getDate());
     };
-    req.onblocked = () => showMessage("保存データベースを開けません", "別タブのSomnoLogを閉じて再読み込みしてください。");
-    const database = await request(req);
-    database.onversionchange = () => {
-      database.close(); db = null;
-      if (state === "recording") stopRecording("database-closed");
-      else showMessage("データベース更新", "別タブで更新されました。再読み込みしてください。");
-    };
-    return database;
-  }
-  async function readStore(store, key, all = false) {
-    const tx = db.transaction(store, "readonly"), done = transactionDone(tx);
-    const objectStore = tx.objectStore(store);
-    const result = await request(all ? objectStore.getAll() : objectStore.get(key));
-    await done; return result;
-  }
-  function getSession(id) { return readStore("sessions", id); }
-  function allSessions() { return readStore("sessions", undefined, true); }
-  function getPart(store, id, seq) { return readStore(store, [id, seq]); }
-  async function putSession(s) {
-    const tx = db.transaction("sessions", "readwrite"), done = transactionDone(tx);
-    tx.objectStore("sessions").put(s); await done;
-  }
-  function enqueue(work) {
-    pendingWrites++;
-    const p = queue.then(() => { if (writeError) throw writeError; return work(); });
-    queue = p.catch(e => {
-      if (!writeError) {
-        writeError = e;
-        queueMicrotask(() => { if (state === "recording") stopRecording("storage-error"); });
-      }
-    }).finally(() => pendingWrites--);
-    if (pendingWrites > CONFIG.maxPendingWrites && !writeError) {
-      writeError = new Error("保存処理が滞留しました。データ保護のため停止します。");
-      queueMicrotask(() => { if (state === "recording") stopRecording("storage-error"); });
-    }
-    p.catch(() => {});
-    return p;
-  }
-  async function saveActive(snapshot, store = null, part = null) {
-    const tx = db.transaction(store ? ["sessions", store] : ["sessions"], "readwrite");
-    const done = transactionDone(tx), sessions = tx.objectStore("sessions");
-    const req = sessions.get(snapshot.id);
-    req.onsuccess = () => {
-      const found = req.result;
-      if (!found || found.status !== "recording") { tx.abort(); return; }
-      if (part) tx.objectStore(store).put(part);
-      sessions.put(snapshot);
-    };
-    await done;
-  }
-  function snapshot() { return JSON.parse(JSON.stringify(session)); }
-  function flushRows() {
-    if (!session) return;
-    session.heartbeatMs = Date.now();
-    if (!rows.length) {
-      const s = snapshot(); enqueue(() => saveActive(s)); return;
-    }
-    const batch = rows; rows = [];
-    const seq = batchSeq++; session.logBatchCount = batchSeq;
-    const s = snapshot();
-    enqueue(() => saveActive(s, "logs", { sessionId: s.id, seq, rows: batch }));
-  }
-  async function recoverInterrupted() {
-    const tx = db.transaction("sessions", "readwrite"), done = transactionDone(tx);
-    const store = tx.objectStore("sessions"), req = store.getAll();
-    let count = 0, live = false;
-    req.onsuccess = () => {
-      for (const s of req.result) {
-        if (s.status !== "recording") continue;
-        if (Date.now() - s.heartbeatMs < CONFIG.staleMs) { live = true; continue; }
-        s.status = "interrupted";
-        s.endMs = Math.max(s.startMs, s.lastDataMs || s.startMs);
-        s.stopReason = "abnormal-exit";
-        s.interruptedDetectedMs = Date.now();
-        s.error = "前回は正常な停止処理を完了していません。終了日時は最後に保存できたデータの時刻です。";
-        store.put(s); count++;
-      }
-    };
-    await done; return { count, live };
-  }
-  async function refreshRecords() { records = await allSessions(); render(); }
-  async function acquireRecordingLock() {
-    if (!navigator.locks) return;
-    let acknowledge;
-    const acquired = new Promise(resolve => acknowledge = resolve);
-    navigator.locks.request("SomnoLog-recording-v001", { ifAvailable: true }, async lock => {
-      if (!lock) { acknowledge(false); return; }
-      await new Promise(resolve => { recordingUnlock = resolve; acknowledge(true); });
-    }).catch(() => acknowledge(false));
-    if (!await acquired) throw new Error("別タブで記録中です。そちらの記録を停止してください。");
-  }
-  async function insertNewSession(s) {
-    const tx = db.transaction("sessions", "readwrite"), done = transactionDone(tx);
-    const store = tx.objectStore("sessions"), req = store.getAll();
-    let collision = false;
-    req.onsuccess = () => {
-      collision = req.result.some(r => r.status === "recording");
-      if (collision) { tx.abort(); return; }
-      store.add(s);
-    };
-    try { await done; }
-    catch (e) {
-      if (collision) throw new Error("未終了の記録があります。別タブを確認し、終了・再読み込み後に復元してください。");
-      throw e;
-    }
-  }
+    let month = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
+    let mode = "single";
+    let selected = todayKey();
+    let rangeStart = null;
+    let rangeEnd = null;
 
-  function medianDb(values) {
-    if (!values.length) return null;
-    const a = values.slice().sort((x, y) => x - y), n = a.length;
-    return n % 2 ? a[(n - 1) / 2] : (a[n / 2 - 1] + a[n / 2]) / 2;
-  }
-  function soundStatus() {
-    const b = soundCalibration.baselineDb, w = latestSoundWindow;
-    const current = w?.valid ? w.db.toFixed(1) + " dBFS" : "欠測／無信号";
-    if (!session) {
-      el("sound-level-status").textContent = ready.microphone ?
-        `${current} ／ 記録前の仮基準で表示。記録開始後に10秒測定します。` :
-        "マイク許可後に相対音量を表示。記録開始後10秒は環境音測定。";
-    } else if (soundCalibration.failed) {
-      el("sound-level-status").textContent = "環境音基準の取得失敗。停止処理中です。";
-    } else if (b === null) {
-      el("sound-level-status").textContent =
-        `${current} ／ 環境音測定 ${Math.min(10, soundCalibration.elapsedMs / 1000).toFixed(1)}/10秒（音検出の集計前）`;
-    } else {
-      el("sound-level-status").textContent =
-        `${current} ／ 基準 ${b.toFixed(1)} dBFS ／ 差 ${w?.valid ? (w.db - b).toFixed(1) : "—"} dB ／ 検出 ＋10dB`;
-    }
-  }
-
-  async function setupSoundWindows() {
-    if (!audioContext.audioWorklet || !window.AudioWorkletNode)
-      throw new Error("100ms非重複窓に必要なAudioWorkletに未対応です。対応ブラウザーで開いてください。");
-
-    const code = "(function pcmWorkletModule() {\n  class SomnoWindowProcessor extends AudioWorkletProcessor {\n    constructor() {\n      super();\n      this.token = null;\n      this.reset();\n      this.port.onmessage = e => {\n        if (e.data.command === \"stop\") {\n          this.port.postMessage({type:\"stopped\",token:this.token});\n          this.token = null;\n          this.reset();\n        } else {\n          this.token = e.data.token || null;\n          this.reset();\n        }\n      };\n    }\n    reset() {\n      this.index = 0;\n      this.n = 0;\n      this.sum = 0;\n      this.origin = null;\n      this.inputWindow = new Float32Array(Math.ceil(sampleRate / 10) + 1);\n    }\n    pcm16() {\n      // 各出力区間の入力を平均する簡易間引き。\n      // 医療用・高忠実度のリサンプラーとは扱わない。\n      const out = new Int16Array(1600);\n      for (let j = 0; j < out.length; j++) {\n        const a = Math.floor(j * this.n / out.length);\n        const b = Math.floor((j + 1) * this.n / out.length);\n        let sum = 0;\n        for (let k = a; k < b; k++) sum += this.inputWindow[k];\n        const value = Math.max(-1, Math.min(1, sum / Math.max(1, b - a)));\n        out[j] = Math.round(value * (value < 0 ? 32768 : 32767));\n      }\n      return out;\n    }\n    process(inputs, outputs) {\n      const input = inputs[0]?.[0];\n      if (input) {\n        for (let i = 0; i < input.length; i++) {\n          if (this.origin === null) this.origin = currentFrame + i;\n          const value = input[i];\n          this.inputWindow[this.n] = Number.isFinite(value) ? value : 0;\n          this.sum += value * value;\n          this.n++;\n          const target =\n            Math.round((this.index + 1) * sampleRate / 10) -\n            Math.round(this.index * sampleRate / 10);\n          if (this.n === target) {\n            const rms = Math.sqrt(this.sum / this.n);\n            const valid = Number.isFinite(rms) && rms > 0;\n            const message = {\n              token:this.token,\n              rms:valid ? rms : null,\n              db:valid ? 20 * Math.log10(rms) : null,\n              durationMs:this.n / sampleRate * 1000,\n              audioStart:this.origin / sampleRate,\n              audioEnd:(currentFrame + i + 1) / sampleRate,\n              valid\n            };\n            if (this.token) {\n              const pcm = this.pcm16();\n              message.pcm = pcm;\n              this.port.postMessage(message, [pcm.buffer]);\n            } else {\n              this.port.postMessage(message);\n            }\n            this.index++;\n            this.n = 0;\n            this.sum = 0;\n            this.origin = null;\n          }\n        }\n      }\n      for (const channels of outputs)\n        for (const channel of channels) channel.fill(0);\n      return true;\n    }\n  }\n  registerProcessor(\"somnolog-100ms\", SomnoWindowProcessor);\n})();";
-    const url = URL.createObjectURL(new Blob([code], { type: "text/javascript" }));
-    try { await audioContext.audioWorklet.addModule(url); }
-    finally { URL.revokeObjectURL(url); }
-    soundNode = new AudioWorkletNode(audioContext, "somnolog-100ms", {
-      numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1],
-      channelCount: 1, channelCountMode: "explicit"
-    });
-    soundNode.port.onmessage = e => {
-      if (e.data.type === "stopped") {
-        if (e.data.token === soundWindowToken) {
-          soundStopResolve?.();
-          soundStopResolve = null;
-        }
-        return;
-      }
-      consumeSoundWindow(e.data);
-    };
-    micSource.connect(soundNode);
-    // プロセッサーの出力は常に無音。マイクをスピーカーへ直接流さない。
-    soundNode.connect(audioContext.destination);
-    const activeContext = audioContext;
-    activeContext.addEventListener("statechange", () => {
-      if (audioContext !== activeContext || state !== "recording") return;
-      if (activeContext.state !== "running") {
-        audioError = audioError || new Error("音声クロックが停止しました。同期未確認区間を圧縮して継続せず、中断停止します。");
-        stopRecording("audio-context-suspended");
-      }
-    });
-  }
-
-  function consumeSoundWindow(w) {
-    if (session && w.token !== soundWindowToken) return;
-    latestSoundWindow = w;
-    if (!session && w.valid) {
-      previewDb.push(w.db);
-      if (previewDb.length > 100) previewDb.shift();
-    }
-    const displayBase = session ?
-      soundCalibration.baselineDb ?? medianDb(soundCalibration.values) :
-      medianDb(previewDb);
-    liveSound.push(w.valid && Number.isFinite(displayBase) ? w.db - displayBase : null);
-    if (liveSound.length > 100) liveSound.shift();
-
-    if (!session || !["recording", "stopping"].includes(state) || w.token !== soundWindowToken) {
-      soundStatus(); return;
-    }
-    consumePCM(w);
-    if (soundCalibration.failed) return;
-
-    const now = Date.now(), mono = performance.now();
-    const gap = soundLastAudioEnd !== null && (w.audioStart - soundLastAudioEnd) * 1000 > 1;
-    soundLastAudioEnd = w.audioEnd;
-    const valid = w.valid && !gap && audioContext.state === "running" &&
-      micStream?.getAudioTracks().some(t => t.readyState === "live" && !t.muted);
-    const dbfs = valid ? w.db : null;
-    const baseline = soundCalibration.baselineDb;
-    const phase = baseline === null ? "baseline" : "detection";
-    let detected = null, calibrationFailure = false;
-
-    if (baseline === null) {
-      soundCalibration.elapsedMs += w.durationMs;
-      if (valid) soundCalibration.values.push(dbfs);
-      else soundCalibration.invalid = true;
-      if (soundCalibration.elapsedMs + 1e-6 >= CONFIG.baselineMs) {
-        if (soundCalibration.invalid || soundCalibration.values.length !== 100) {
-          soundCalibration.failed = true;
-          calibrationFailure = true;
-          session.events.push({
-            utc: new Date().toISOString(), type: "baseline-error",
-            value: "開始10秒に欠測・無信号があり、100窓の基準を確定できません"
-          });
-          audioError = new Error("開始10秒の環境音基準を取得できませんでした。マイクを確認し、記録をやり直してください。");
-        } else {
-          soundCalibration.baselineDb = medianDb(soundCalibration.values);
-          session.baselineDb = soundCalibration.baselineDb;
-          session.baselineCompletedMs = now;
-          session.baselineValidMs = soundCalibration.elapsedMs;
-        }
-      }
-    } else if (valid) {
-      detected = dbfs - baseline >= CONFIG.soundDeltaDb;
+    function errorText(error) {
+      if (!error) return "原因不明";
+      return `${error.name || "Error"}: ${error.message || String(error)}`;
     }
 
-    if (soundAudioOrigin === null) soundAudioOrigin = w.audioStart;
-    const offsetMs = (w.audioEnd - soundAudioOrigin) * 1000;
-    const m = !gap && lastMotion && mono - lastMotion.mono <= CONFIG.motionFreshMs ? lastMotion : null;
-    const motion = m === null ? null : m.value >= CONFIG.motionThreshold;
-    rows.push({
-      tMs: session.startMs + offsetMs, receivedEpochMs: now,
-      offsetMs, intervalMs: w.durationMs,
-      audioWindowStartSeconds: w.audioStart, audioWindowEndSeconds: w.audioEnd,
-      soundRms: valid ? w.rms : null, soundDbfs: dbfs, baselineDb: baseline,
-      soundDeltaDb: dbfs !== null && baseline !== null ? dbfs - baseline : null,
-      soundPhase: phase,
-      motionMagnitude: m?.value ?? null,
-      ax: m?.x ?? null, ay: m?.y ?? null, az: m?.z ?? null,
-      motionSource: m?.source ?? null,
-      soundDetected: detected, motionDetected: motion,
-      gap, visibility: document.visibilityState
-    });
-    session.measuredElapsedMs = mono - session.startMono;
-    session.lastDataMs = now;
-    session.soundObservedMs += valid ? w.durationMs : 0;
-    session.motionObservedMs += m ? w.durationMs : 0;
-    session.soundDetectedMs += detected === true ? w.durationMs : 0;
-    session.motionDetectedMs += motion === true ? w.durationMs : 0;
-    session.soundEvaluatedMs += detected !== null ? w.durationMs : 0;
-    session.sampleCount++;
-    if (gap) session.gapCount++;
-    soundStatus();
-    if (calibrationFailure)
-      queueMicrotask(() => { if (state === "recording") stopRecording("baseline-error"); });
-  }
-
-  // 権限要求と計測準備は別の状態として扱う。
-  let permissionBusy = false, motionPermission = "unknown", motionWaiter = null;
-
-  function canRequestPermission() {
-    return !permissionBusy && !updating && !exporting &&
-      !["starting", "recording", "stopping"].includes(state);
-  }
-  function checkPermissionEnvironment(feature) {
-    if (!window.isSecureContext)
-      throw new Error("HTTPSまたはlocalhostで開いてください。");
-    const policy = document.permissionsPolicy || document.featurePolicy;
-    if (policy?.allowsFeature && policy.allowsFeature(feature) === false)
-      throw new Error(feature + "がサーバーのPermissions-Policyで禁止されています。");
-  }
-  function permissionError(e) {
-    const messages = {
-      NotAllowedError: "権限が拒否されました。Safariのこのサイトの設定とiPhone側の制限を確認してください。",
-      SecurityError: "安全性・権限ポリシーの制限です。HTTPSとサーバー設定を確認してください。",
-      NotFoundError: "利用できるマイクが見つかりません。",
-      NotReadableError: "マイクを読み取れません。他の録音・通話を終了して再試行してください。",
-      OverconstrainedError: "マイクが入力条件に対応していません。",
-      AbortError: "入力取得が中断されました。端末の状態を確認して再試行してください。"
-    };
-    return `${e?.name || "Error"}：${messages[e?.name] || errorText(e)}`;
-  }
-  async function withTimeout(promise, ms, message) {
-    let timer;
-    try {
-      return await Promise.race([
-        promise,
-        new Promise((_, reject) => {
-          timer = setTimeout(() => reject(new Error(message)), ms);
-        })
-      ]);
-    } finally { clearTimeout(timer); }
-  }
-  function releaseMicResources() {
-    const node = soundNode, source = micSource, stream = micStream, context = audioContext;
-    soundNode = null; micSource = null; micStream = null; audioContext = null;
-    ready.microphone = false;
-    if (node) {
-      node.port.onmessage = null;
-      try { node.disconnect(); } catch {}
-    }
-    try { source?.disconnect(); } catch {}
-    stream?.getTracks().forEach(track => track.stop());
-    return context && context.state !== "closed" ?
-      context.close().catch(() => {}) : Promise.resolve();
-  }
-  function motionStatus() {
-    const fresh = !!lastMotion && performance.now() - lastMotion.mono <= CONFIG.motionFreshMs;
-    ready.motion = fresh;
-    const text = motionPermission === "denied" ? "体動：権限拒否。音声のみ記録できます。" :
-      fresh ? "体動：有効な加速度データを受信中。" :
-      motionPermission === "granted" ? "体動：権限要求済み・無信号（欠測）。音声のみ記録できます。" :
-      "体動：ボタンをタップして権限を要求してください。";
-    const status = el("motion-status");
-    if (status.textContent !== text) status.textContent = text;
-    el("motion-permission").hidden = fresh;
-  }
-  async function acquireMic() {
-    if (!canRequestPermission()) return;
-    permissionBusy = true;
-    updateControls();
-    const status = el("microphone-status");
-    status.textContent = "マイク：権限要求・計測準備中…";
-    try {
-      checkPermissionEnvironment("microphone");
-      if (!navigator.mediaDevices?.getUserMedia)
-        throw new Error("マイク取得APIに未対応です。");
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC || !window.AudioWorkletNode)
-        throw new Error("録音・100ms窓の計測APIに未対応です。iOSの対応状況を確認してください。");
-
-      // 古い入力の解放を待たず、タップの同一処理内で両APIを呼ぶ。
-      releaseMicResources();
-      audioContext = new AC();
-      const resumeResult = audioContext.resume().then(
-        () => null, e => e
-      );
-      micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        video: false
-      });
-      status.textContent = "マイク：許可済み・100ms窓を準備中…";
-      const resumeError = await withTimeout(resumeResult, 8000,
-        "マイクは許可済みですが音声処理を開始できません。再試行ボタンをタップしてください。");
-      if (resumeError) throw resumeError;
-      if (audioContext.state !== "running")
-        throw new Error("音声処理が停止中です。再試行ボタンをタップしてください。");
-      if (!micStream.getAudioTracks().some(t => t.readyState === "live"))
-        throw new Error("許可後にマイク入力が終了しました。再試行してください。");
-      micSource = audioContext.createMediaStreamSource(micStream);
-      await setupSoundWindows();
-      ready.microphone = true;
-      previewDb = []; liveSound = [];
-      el("microphone-permission").hidden = true;
-      status.textContent = "マイク：許可済み・計測準備完了。";
-      const activeStream = micStream;
-      for (const track of activeStream.getAudioTracks()) {
-        track.addEventListener("ended", () => {
-          if (micStream !== activeStream) return;
-          ready.microphone = false;
-          status.textContent = "マイク：入力終了。再取得してください。";
-          el("microphone-permission").hidden = false;
-          updateControls();
-          if (state === "recording") stopRecording("microphone-ended");
-        });
-        for (const event of ["mute", "unmute"]) track.addEventListener(event, () => {
-          if (micStream !== activeStream) return;
-          status.textContent = track.muted ?
-            "マイク：一時的に入力なし（欠測）。" : "マイク：入力再開。";
-        });
-      }
-      soundStatus(); drawLive();
-    } catch (e) {
-      await releaseMicResources();
-      el("microphone-permission").hidden = false;
-      el("microphone-permission").textContent = "マイクを再試行";
-      status.textContent = "マイク：" + permissionError(e);
-      showMessage("マイクの取得・準備に失敗", permissionError(e));
-    } finally { permissionBusy = false; updateControls(); }
-  }
-
-  function motionHandler(event) {
-    let a = event.acceleration, source = "acceleration";
-    if (!a || ![a.x, a.y, a.z].every(Number.isFinite)) {
-      a = event.accelerationIncludingGravity;
-      source = "accelerationIncludingGravity-highpass";
-      if (!a || ![a.x, a.y, a.z].every(Number.isFinite)) {
-        lastMotion = null; motionStatus(); return;
-      }
-      if (!gravity) gravity = { x: a.x, y: a.y, z: a.z };
-      const raw = a;
-      for (const axis of ["x", "y", "z"])
-        gravity[axis] = CONFIG.gravityAlpha * gravity[axis] + (1 - CONFIG.gravityAlpha) * raw[axis];
-      a = { x: raw.x - gravity.x, y: raw.y - gravity.y, z: raw.z - gravity.z };
-    }
-    lastMotion = {
-      mono: performance.now(), x: a.x, y: a.y, z: a.z,
-      value: Math.hypot(a.x, a.y, a.z), source, unit: "m/s²"
-    };
-    motionWaiter?.();
-    motionStatus();
-  }
-  async function acquireMotion() {
-    if (!canRequestPermission()) return;
-    permissionBusy = true;
-    updateControls();
-    const button = el("motion-permission");
-    el("motion-status").textContent = "体動：権限要求中…";
-    try {
-      checkPermissionEnvironment("accelerometer");
-      const API = window.DeviceMotionEvent;
-      if (!API) throw new Error("体動センサーAPIに未対応です。音声のみ記録できます。");
-      // この呼び出しより前に await を置かない（iPhoneの操作要件）。
-      if (typeof API.requestPermission === "function" &&
-          await API.requestPermission() !== "granted") {
-        motionPermission = "denied";
-        throw new DOMException("体動センサーが拒否されました。", "NotAllowedError");
-      }
-      motionPermission = "granted";
-      gravity = null; lastMotion = null;
-      if (!motionRequested) {
-        window.addEventListener("devicemotion", motionHandler);
-        motionRequested = true;
-      }
-      drawLive();
-      button.textContent = "体動データを確認中…";
-      let timer;
-      try {
-        await new Promise(resolve => {
-          motionWaiter = resolve;
-          timer = setTimeout(resolve, 3000);
-        });
-      } finally { clearTimeout(timer); motionWaiter = null; }
-      motionStatus();
-      button.textContent = "体動データを再確認";
-      if (!ready.motion) showMessage("体動データ未受信",
-        "権限要求は通りましたが、有効な加速度データを受信していません。" +
-        "センサー設定・端末対応を確認してください。音声のみ記録でき、体動は欠測として保存します。");
-    } catch (e) {
-      lastMotion = null; ready.motion = false;
-      el("motion-status").textContent = "体動：" + permissionError(e);
-      button.hidden = false; button.textContent = "モーションセンサーを再試行";
-      showMessage("体動の取得に失敗", permissionError(e));
-    } finally { permissionBusy = false; updateControls(); }
-  }
-
-  function livePath(values, scale) {
-    let path = "", open = false;
-    values.forEach((v, i) => {
-      if (!Number.isFinite(v)) { open = false; return; }
-      const x = i / Math.max(1, values.length - 1) * 320;
-      const y = Math.max(4, Math.min(68, 36 - v * scale));
-      path += `${open ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)} `;
-      open = true;
-    });
-    return path || "M0 36H320";
-  }
-  function drawLive() {
-    cancelAnimationFrame(animation);
-    let previous = 0;
-    const draw = t => {
-      if (t - previous >= 100) {
-        previous = t;
-        const motion = lastMotion && performance.now() - lastMotion.mono <= CONFIG.motionFreshMs ?
-          lastMotion.value : null;
-        motionStatus();
-        liveMotion.push(motion);
-        if (liveMotion.length > 100) liveMotion.shift();
-        const span = Math.max(10, ...liveSound.filter(Number.isFinite).map(v => Math.abs(v)));
-        el("microphone-path").setAttribute("d", livePath(liveSound, 30 / span));
-        el("motion-path").setAttribute("d", livePath(liveMotion, 15));
-        el("microphone-wave").setAttribute("aria-label",
-          latestSoundWindow?.valid ? "マイク相対音量（dB）" : "マイク欠測");
-        el("motion-wave").setAttribute("aria-label", motion === null ? "体動欠測" : "体動実入力");
-      }
-      animation = requestAnimationFrame(draw);
-    };
-    animation = requestAnimationFrame(draw);
-  }
-
-  async function requestWakeLock() {
-    try {
-      if (navigator.wakeLock && !document.hidden && state === "recording")
-        wakeLock = await navigator.wakeLock.request("screen");
-    } catch (e) { /* 録音継続の保証として扱わない */ }
-  }
-async function startRecording() {
-  if (state !== "idle" || !ready.microphone || !db || updating || exporting || permissionBusy) return;
-  state = "starting"; updateControls();
-  writeError = null; audioError = null;
-  queue = Promise.resolve(); pendingWrites = 0;
-  rows = []; chunkSeq = 0; batchSeq = 0; stopPromise = null;
-  pcmParts = []; pcmFrames = 0; pcmExpectedEnd = null;
-  let inserted = false;
-  try {
-    const patientId = readPatientId();
-    const resumeResult = audioContext.resume().then(() => null, e => e);
-    await acquireRecordingLock();
-    const resumeError = await withTimeout(resumeResult, 8000, "音声処理を再開できません。");
-    if (resumeError) throw resumeError;
-    if (audioContext.state !== "running")
-      throw new Error("音声処理が停止中です。");
-    if (audioContext.sampleRate < CONFIG.pcmSampleRate)
-      throw new Error("入力サンプルレートが16kHz未満です。");
-    if (!micStream.getAudioTracks().some(t => t.readyState === "live" && !t.muted))
-      throw new Error("マイク入力が終了、またはミュートされています。");
-    if (!soundNode) throw new Error("100ms窓が準備されていません。");
-    const now = Date.now();
-    session = {
-      id:crypto.randomUUID(),patientId,
-      appVersion:"005",formatVersion:CONFIG.formatVersion,
-      date:dateKey(new Date(now).getFullYear(),new Date(now).getMonth(),new Date(now).getDate()),
-      startMs:now,startMono:performance.now(),endMs:null,
-      heartbeatMs:now,lastDataMs:now,registered:false,status:"recording",
-      settings:{...CONFIG},
-      timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
-      timezoneOffsetMinutes:new Date(now).getTimezoneOffset(),
-      audioMime:"audio/wav",audioCaptureMode:"independent-pcm-wav",
-      audioBytes:0,audioChunkCount:0,logBatchCount:0,
-      sampleCount:0,gapCount:0,measuredElapsedMs:0,
-      soundObservedMs:0,motionObservedMs:0,
-      soundDetectedMs:0,motionDetectedMs:0,soundEvaluatedMs:0,
-      baselineDb:null,baselineValidMs:0,events:[],
-      motionInitiallyAvailable:!!lastMotion &&
-        performance.now() - lastMotion.mono <= CONFIG.motionFreshMs,
-      audioSettings:micStream.getAudioTracks()[0].getSettings(),
-      audioContextSampleRate:audioContext.sampleRate,
-      exportedAudioSampleRate:CONFIG.pcmSampleRate,
-      userAgent:navigator.userAgent,
-      synchronization:"unverified"
-    };
-    await insertNewSession(session); inserted = true;
-    const epoch = Date.now();
-    session.startMs = epoch;
-    session.startMono = performance.now();
-    session.heartbeatMs = epoch; session.lastDataMs = epoch;
-    session.audioClockAtStartRequestSeconds = audioContext.currentTime;
-    session.date = dateKey(new Date(epoch).getFullYear(),new Date(epoch).getMonth(),new Date(epoch).getDate());
-    soundCalibration = {values:[],elapsedMs:0,baselineDb:null,invalid:false,failed:false};
-    soundAudioOrigin = null; soundLastAudioEnd = null;
-    latestSoundWindow = null; liveSound = []; previewDb = [];
-    soundWindowToken = session.id;
-    state = "recording";
-    el("anonymous-id").disabled = true;
-    soundNode.port.postMessage({token:soundWindowToken});
-    // 更新された開始基準も音声到着前に保存予約する。
-    const initial = snapshot();
-    enqueue(() => saveActive(initial));
-    soundStatus();
-    flushTimer = setInterval(flushRows, CONFIG.flushMs);
-    updateControls(); requestWakeLock();
-    navigator.storage?.persist?.().catch(() => {});
-  } catch (e) {
-    if (session && inserted) {
-      try {
-        await queue;
-        const stored = await getSession(session.id);
-        if (stored?.status === "recording") {
-          stored.status = "failed"; stored.endMs = Date.now();
-          stored.error = errorText(e); await putSession(stored);
-        }
-      } catch {}
-    }
-    soundWindowToken = null;
-    soundNode?.port.postMessage({token:null});
-    session = null; pcmParts = []; pcmFrames = 0;
-    state = "idle";
-    el("anonymous-id").disabled = false;
-    recordingUnlock?.(); recordingUnlock = null;
-    updateControls(); showMessage("記録を開始できません", errorText(e));
-  }
-}
-    // 完成済み100ms窓を受け取ってから集計を閉じる。
-    // 停止時の100ms未満の端数窓は検出時間へ加算しない。
-    async function stopSoundWindows() {
-      if (!soundNode || !soundWindowToken) return;
-      let timer = null;
-      try {
-        await new Promise((resolve, reject) => {
-          soundStopResolve = resolve;
-          timer = setTimeout(() => {
-            soundStopResolve = null;
-            reject(new Error(
-              "100ms窓処理の停止応答を確認できませんでした。末尾の集計は不完全な可能性があります。"
-            ));
-          }, 3000);
-          soundNode.port.postMessage({ command: "stop" });
-        });
-      } finally {
-        clearTimeout(timer);
-        soundStopResolve = null;
-        soundWindowToken = null;
-      }
+    function closeDialogs() {
+      document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close());
     }
 
-    function stopRecording(reason = "user") {
-      if (stopPromise) return stopPromise;
-      if (state !== "recording") return Promise.resolve();
-
-      stopPromise = (async () => {
-        state = "stopping";
-        updateControls();
-        clearInterval(flushTimer);
-        flushTimer = null;
-
-        session.endMs = Date.now();
-        session.measuredElapsedMs = performance.now() - session.startMono;
-        session.stopReason = reason;
-
-        await stopSoundWindows().catch(e => {
-        audioError = audioError || e;
-      });
-      flushPCM();
-        flushRows();
-        await queue;
-
-        let result = session;
-        if (writeError) {
-          try {
-            const persisted = await getSession(session.id);
-            if (persisted) result = persisted;
-          } catch {}
-          result.endMs = Math.max(
-            result.startMs,
-            result.lastDataMs || result.startMs
-          );
-          result.status = "interrupted";
-          result.stopReason = "storage-error";
-          result.error = errorText(writeError);
-        } else {
-          result.status =
-            audioError || reason !== "user" ? "interrupted" : "completed";
-          if (audioError) result.error = errorText(audioError);
-        }
-
-        delete result.startMono;
-        let finalStored = true;
-        try {
-          await putSession(result);
-        } catch (e) {
-          finalStored = false;
-          result.error =
-            `${result.error || ""} 最終保存失敗：${errorText(e)}`;
-        }
-
-        currentResult = result;
-        session = null;
-        el("anonymous-id").disabled = false;
-        state = "idle";
-
-        if (wakeLock) {
-          try { await wakeLock.release(); } catch {}
-        }
-        wakeLock = null;
-        recordingUnlock?.();
-        recordingUnlock = null;
-
-        renderResult(result);
-        try { await refreshRecords(); } catch {}
-        updateControls();
-        showScreen("record-screen");
-
-        if (result.error || reason !== "user" || !finalStored) {
-          showMessage(
-            "記録停止・保存の注意",
-            `${result.error || "入力または録音が中断したため停止しました。"} 保存済みデータの欠測・音声の欠落を確認してください。`
-          );
-        }
-      })();
-
-      return stopPromise;
+    function showMessage(title, text) {
+      if (disposed) return;
+      closeDialogs();
+      el("message-title").textContent = title;
+      el("message-body").textContent = text;
+      el("message").showModal();
     }
 
-    function durationNode(node, ms, seconds = false) {
-      node.replaceChildren();
-      const total = Math.floor(Math.max(0, Number(ms) || 0) / 1000);
-      const first = seconds
-        ? Math.floor(total / 60)
-        : Math.floor(total / 3600);
-      const second = seconds
-        ? total % 60
-        : Math.floor(total / 60) % 60;
-      node.append(String(first));
-      const a = document.createElement("small");
-      a.textContent = seconds ? "分" : "時間";
-      node.append(a, String(second));
-      const b = document.createElement("small");
-      b.textContent = seconds ? "秒" : "分";
-      node.append(b);
+    function previewMessage(title, text) {
+      closeDialogs();
+      el("preview-title").textContent = title;
+      el("preview-dialog").querySelector("p").textContent = text;
+      el("preview-dialog").showModal();
     }
 
-    function dateTimeLabel(ms) {
-      const d = new Date(ms);
-      return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
-    }
-
-    function rangeText(r) {
-      return `${dateTimeLabel(r.startMs)} → ${dateTimeLabel(
-        r.endMs ?? r.lastDataMs ?? r.startMs
-      )}`;
-    }
-
-    function elapsed(r) {
-      return r.measuredElapsedMs ||
-        Math.max(0, (r.endMs || r.lastDataMs || r.startMs) - r.startMs);
-    }
-
-    function coverageText(r) {
-      const total = elapsed(r);
-      const sound = Math.max(0, total - (r.soundObservedMs || 0));
-      const motion = Math.max(0, total - (r.motionObservedMs || 0));
-      const relative = !!r.settings?.baselineMs;
-      const baseline = Number.isFinite(r.baselineDb)
-        ? `${r.baselineDb.toFixed(1)} dBFS`
-        : "未確定";
-
-      return [
-        `音の取得 ${Math.floor((r.soundObservedMs || 0) / 1000)}秒／欠測 ${Math.ceil(sound / 1000)}秒、`,
-        `体動の取得 ${Math.floor((r.motionObservedMs || 0) / 1000)}秒／欠測 ${Math.ceil(motion / 1000)}秒。`,
-        relative
-          ? `音検出は100ms非重複窓の相対＋10dB判定。基準 ${baseline}。判定対象 ${Math.floor((r.soundEvaluatedMs || 0) / 1000)}秒。開始10秒は音検出の集計対象外。`
-          : "旧版の固定RMSしきい値による記録。",
-        "診断・いびき判定ではありません。",
-        r.status === "interrupted" ? "中断記録。" : "",
-        r.error || ""
-      ].join(" ");
-    }
-
-    function renderResult(r) {
-      el("result-range").textContent = rangeText(r);
-      el("result-year").textContent =
-        `${r.registered ? "カレンダー登録済み" : "自動保存・カレンダー未登録"}／${r.status === "completed" ? "記録終了" : "中断・不完全な記録"}`;
-      durationNode(el("result-duration"), elapsed(r));
-      el("result-time-detail").textContent = coverageText(r);
-      durationNode(el("sound-duration"), r.soundDetectedMs, true);
-      durationNode(el("motion-duration"), r.motionDetectedMs, true);
-      el("save-range").textContent = rangeText(r);
-    }
-
-    function chooseDate(k) {
-      if (mode === "single") {
-        selected = k;
-      } else if (!rangeStart || rangeEnd) {
-        rangeStart = k;
-        rangeEnd = null;
-      } else {
-        rangeEnd = k;
-        if (rangeEnd < rangeStart)
-          [rangeStart, rangeEnd] = [rangeEnd, rangeStart];
-      }
-      render();
-      el("days").querySelector(`[data-date="${k}"]`)?.focus();
-    }
-
-    function renderCalendar() {
-      const y = month.getFullYear(), m = month.getMonth();
-      el("month-title").textContent = `${y}年${m + 1}月`;
-      el("single-mode").classList.toggle("active", mode === "single");
-      el("range-mode").classList.toggle("active", mode === "range");
-      el("single-mode").setAttribute("aria-pressed", String(mode === "single"));
-      el("range-mode").setAttribute("aria-pressed", String(mode === "range"));
-      el("selection-hint").textContent =
-        mode === "single" ? "確認したい日付を選んでください。" :
-        !rangeStart ? "① 開始日を選んでください。" :
-        !rangeEnd ? "② 終了日を選んでください。" :
-        "期間を選択しました。別の日付を押すと選び直せます。";
-
-      el("range-tools").hidden = mode !== "range";
-      el("range-label").textContent =
-        !rangeStart ? "期間未選択" :
-        !rangeEnd ? `開始日：${shortLabel(rangeStart)}` :
-        periodLabel(rangeStart, rangeEnd);
-
-      const grid = el("days");
-      grid.replaceChildren();
-      for (let i = 0; i < new Date(y, m, 1).getDay(); i++) {
-        const blank = document.createElement("span");
-        blank.setAttribute("aria-hidden", "true");
-        grid.append(blank);
-      }
-
-      for (let d = 1; d <= new Date(y, m + 1, 0).getDate(); d++) {
-        const k = dateKey(y, m, d);
-        const weekday = new Date(y, m, d).getDay();
-        const has = records.some(r => r.registered && r.date === k);
-        const edge = mode === "single"
-          ? k === selected
-          : k === rangeStart || k === rangeEnd;
-        const inside = mode === "range" && rangeStart && rangeEnd &&
-          k >= rangeStart && k <= rangeEnd;
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "day" +
-          (weekday === 0 ? " sun" : weekday === 6 ? " sat" : "") +
-          (k === today ? " today" : "") +
-          (inside ? " in-range" : "") +
-          (edge ? " selected" : "");
-        button.dataset.date = k;
-        button.setAttribute("aria-pressed", String(Boolean(edge || inside)));
-        button.setAttribute(
-          "aria-label",
-          `${fullLabel(k)}、保存記録${has ? "あり" : "なし"}${k === today ? "、今日" : ""}${inside ? "、選択期間内" : ""}`
-        );
-        button.innerHTML =
-          `<span>${d}</span><span class="dot${has ? "" : " empty"}" aria-hidden="true"></span>`;
-        button.addEventListener("click", () => chooseDate(k));
-        grid.append(button);
-      }
-    }
-
-    function svgElement(name, attrs = {}) {
-      const n = document.createElementNS(SVG_NS, name);
-      for (const [k, v] of Object.entries(attrs))
-        n.setAttribute(k, String(v));
-      return n;
-    }
-
-    async function logSummary(r, buckets = 220) {
-      const points = Array.from(
-        { length: buckets },
-        () => ({ sound: null, motion: null, count: 0 })
-      );
-      const total = Math.max(1, elapsed(r));
-      for (let seq = 0; seq < r.logBatchCount; seq++) {
-        const part = await getPart("logs", r.id, seq);
-        if (!part) continue;
-        for (const row of part.rows) {
-          const i = Math.min(
-            buckets - 1,
-            Math.max(0, Math.floor(row.offsetMs / total * buckets))
-          );
-          const p = points[i];
-          if (r.settings?.baselineMs) {
-            if (Number.isFinite(row.soundDeltaDb))
-              p.sound = Math.max(p.sound ?? -Infinity, row.soundDeltaDb);
-          } else if (Number.isFinite(row.soundRms)) {
-            p.sound = Math.max(p.sound ?? 0, row.soundRms);
-          }
-          if (Number.isFinite(row.motionMagnitude))
-            p.motion = Math.max(p.motion ?? 0, row.motionMagnitude);
-          p.count++;
-        }
-      }
-      return points;
-    }
-
-    function timelineSvg(r, points) {
-      const relative = !!r.settings?.baselineMs;
-      const svg = svgElement("svg", {
-        viewBox: "0 0 360 236", role: "img",
-        "aria-label":
-          "実測の音量・体動。各区間のピーク値。データのない区間は線が途切れます。"
-      });
-
-      for (const [y, text, color] of [
-        [19, relative ? "相対音量（dB）" : "音量（旧RMS）", "#84b9cf"],
-        [135, "体動（m/s²）", "#bfdbd1"]
-      ]) {
-        const t = svgElement("text", {
-          x: 12, y, fill: color, "font-size": 12
-        });
-        t.textContent = text;
-        svg.append(t);
-      }
-
-      for (const y of [100, 195])
-        svg.append(svgElement("line", {
-          x1: 12, x2: 348, y1: y, y2: y, stroke: "#354452"
-        }));
-
-      const soundSpan = Math.max(
-        10,
-        ...points.map(p => p.sound)
-          .filter(Number.isFinite).map(v => Math.abs(v))
-      );
-
-      for (const [key, base, scale, color] of [
-        ["sound", 100, relative ? 55 / soundSpan : 250, "#84b9cf"],
-        ["motion", 195, 12, "#bfdbd1"]
-      ]) {
-        let path = "", open = false;
-        points.forEach((p, i) => {
-          if (!Number.isFinite(p[key])) { open = false; return; }
-          const x = 12 + i / Math.max(1, points.length - 1) * 336;
-          const y = base - Math.max(-10, Math.min(55, p[key] * scale));
-          path += `${open ? "L" : "M"}${x.toFixed(2)} ${y.toFixed(2)} `;
-          open = true;
-        });
-        svg.append(svgElement("path", {
-          d: path, fill: "none", stroke: color, "stroke-width": 1.6
-        }));
-      }
-
-      for (let i = 0; i < 3; i++) {
-        const d = new Date(r.startMs + elapsed(r) * i / 2);
-        const t = svgElement("text", {
-          x: 12 + i * 168, y: 227,
-          "text-anchor": i === 0 ? "start" : i === 2 ? "end" : "middle",
-          fill: "#aebbc9", "font-size": 11
-        });
-        t.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        svg.append(t);
-      }
-      return svg;
-    }
-
-    function renderRecords() {
-      const [a, b] = bounds();
-      const matched = visibleRecords();
-      const list = el("record-list"), complete = !!(a && b);
-
-      el("selected-heading").textContent = complete
-        ? `${periodLabel(a, b)}の記録（${matched.length}件）`
-        : "表示する期間を選択してください";
-      el("share-button").disabled = !complete || !matched.length;
-      list.replaceChildren();
-
-      if (!complete || !matched.length) {
-        const empty = document.createElement("div");
-        empty.className = "empty-state";
-        empty.textContent = complete
-          ? "カレンダー登録済みの記録はありません。"
-          : "カレンダーで開始日と終了日を選んでください。";
-        list.append(empty);
-        return;
-      }
-
-      for (const r of matched) {
-        const card = document.createElement("article");
-        card.className = "card";
-        card.dataset.recordId = r.id;
-        card.innerHTML = `
-          <span class="saved" data-role="saved-status"></span>
-          <p class="card-time" data-role="record-range"></p>
-          <div class="duration">
-            <span class="label">記録時間</span>
-            <span class="value" data-role="record-duration"></span>
-          </div>
-          <figure class="timeline">
-            <div class="timeline-header">
-              <figcaption class="timeline-title">記録タイムライン</figcaption>
-              <span class="sample"></span>
-            </div>
-            <div class="chart" data-role="timeline-chart"></div>
-            <div class="endpoints">
-              <div>記録開始<strong></strong></div>
-              <div>記録停止<strong></strong></div>
-            </div>
-          </figure>`;
-
-        card.querySelector('[data-role="saved-status"]').textContent =
-          `✓ カレンダーに保存済み${r.status !== "completed" ? "（中断・不完全）" : ""}`;
-        card.querySelector('[data-role="record-range"]').textContent =
-          rangeText(r) + "\n" + coverageText(r);
-        durationNode(
-          card.querySelector('[data-role="record-duration"]'), elapsed(r)
-        );
-        card.querySelector(".sample").textContent = "実測ピーク";
-        const ends = card.querySelectorAll(".endpoints strong");
-        ends[0].textContent = dateTimeLabel(r.startMs);
-        ends[1].textContent = dateTimeLabel(r.endMs || r.lastDataMs);
-        list.append(card);
-
-        logSummary(r).then(points => {
-          if (card.isConnected)
-            card.querySelector('[data-role="timeline-chart"]')
-              .replaceChildren(timelineSvg(r, points));
-        }).catch(e => {
-          if (card.isConnected)
-            card.querySelector('[data-role="timeline-chart"]').textContent =
-              "時系列の読み込み失敗：" + errorText(e);
-        });
-      }
-    }
-
-    function render() {
-      renderCalendar();
-      renderRecords();
-    }
-
-    async function registerCurrent() {
-      if (!currentResult || state !== "idle" || updating) return;
-      el("save-calendar").disabled = true;
-      try {
-        await queue;
-        const stored = await getSession(currentResult.id);
-        if (!stored) throw new Error("保存済みの記録がありません。");
-        stored.registered = true;
-        await putSession(stored);
-        currentResult = stored;
-        renderResult(stored);
-        mode = "single";
-        selected = stored.date;
-        const [y, m] = selected.split("-").map(Number);
-        month = new Date(y, m - 1, 1);
-        await refreshRecords();
-        showScreen("calendar-screen");
-      } catch (e) {
-        el("save-status").textContent = "登録失敗：" + errorText(e);
-      } finally {
-        updateControls();
-      }
-    }
-
-function planExports(target) {
-  const direct = !!window.showSaveFilePicker;
-  const plans = [];
-  for (const r of target) {
-    const count = Number(r.audioChunkCount) || 0;
-    if (direct) {
-      plans.push({r,first:0,last:count,from:0,to:elapsed(r),volume:1,total:1});
-    } else if (count) {
-      const total = Math.ceil(count / 120);
-      for (let volume = 1; volume <= total; volume++) {
-        const first = (volume - 1) * 120;
-        plans.push({
-          r,first,last:Math.min(count,first + 120),
-          from:first * CONFIG.audioChunkMs,
-          to:Math.min(elapsed(r),(first + 120) * CONFIG.audioChunkMs),
-          volume,total
-        });
-      }
-    } else {
-      const total = Math.max(1, Math.ceil(elapsed(r) / 1200000));
-      for (let volume = 1; volume <= total; volume++)
-        plans.push({
-          r,first:0,last:0,
-          from:(volume - 1) * 1200000,
-          to:Math.min(elapsed(r),volume * 1200000),
-          volume,total
-        });
-    }
-  }
-  return plans;
-}
-
-function safeId(value) {
-  return String(value || "").replace(/[^A-Za-z0-9_-]/g, "_").slice(0, 80) || "unknown";
-}
-
-function planFilename(p) {
-  const patient = p.r.patientId || "unassigned";
-  return `SleepLog_${safeId(patient)}_${safeId(p.r.id)}_part${String(p.volume).padStart(3,"0")}of${String(p.total).padStart(3,"0")}.zip`;
-}
-
-function refreshExportLabel() {
-  const p = exportPlans[exportPlanIndex];
-  el("zip-save").textContent = preparedShare ?
-    "この分冊を端末で共有" : p ?
-    `ZIP ${exportPlanIndex + 1}/${exportPlans.length} を作成・保存` : "全分冊の保存操作が完了";
-  el("zip-save").disabled = !p || exporting;
-  el("zip-name").textContent = p ? planFilename(p) : "作成予定の分冊はありません";
-}
-
-function finishExportPart() {
-  preparedShare = null;
-  exportPlanIndex++;
-  refreshExportLabel();
-  const rest = exportPlans.length - exportPlanIndex;
-  el("share-status").textContent = rest ?
-    `この分冊の保存・共有操作を行いました。残り${rest}分冊です。次のZIPを作成してください。端末で保存結果を確認してください。` :
-    "全分冊の保存・共有操作が完了しました。保存結果と医師への到達は端末側で確認してください。";
-}
-function openShare(target = visibleRecords(), origin = "calendar") {
-  if (!target.length || exporting || updating) return;
-  preparedShare = null; shareRecords = target.slice(); shareReturn = origin;
-  exportPlans = planExports(shareRecords); exportPlanIndex = 0;
-  closeDialogs();
-  const start = Math.min(...target.map(r => r.startMs));
-  const end = Math.max(...target.map(r => r.endMs || r.lastDataMs || r.startMs));
-  el("zip-period").textContent = `${dateTimeLabel(start)}〜${dateTimeLabel(end)}`;
-  el("zip-count").textContent = `対象${target.length}記録／${exportPlans.length}分冊`;
-  el("share-status").textContent =
-    "各ZIPは1記録またはその一部です。全分冊を同じフォルダーへ保存してください。旧録音の断片は単独再生できるとは限りません。";
-  el("share-close").textContent = origin === "current" ? "閉じる" : "カレンダーに戻る";
-  el("zip-progress").hidden = true;
-  refreshExportLabel();
-  el("share-dialog").showModal();
-}
-    // ZIP32 / STORE方式。対応環境では保存先へ順次書き出す。
-    const encoder = new TextEncoder();
-    const crcTable = Array.from({ length: 256 }, (_, i) => {
-      let c = i;
-      for (let k = 0; k < 8; k++)
-        c = (c & 1) ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-      return c >>> 0;
-    });
-
-    function crcUpdate(c, bytes) {
-      for (const b of bytes) c = crcTable[(c ^ b) & 255] ^ (c >>> 8);
-      return c >>> 0;
-    }
-
-    function binaryHeader(size) {
-      const b = new Uint8Array(size);
-      return { b, v: new DataView(b.buffer) };
-    }
-
-    class ZipWriter {
-      constructor(sink) {
-        this.sink = sink;
-        this.offset = 0;
-        this.central = [];
-      }
-
-      async write(bytes) {
-        if (this.offset + bytes.length > 0xffffffff)
-          throw new Error("ZIP32の4GiB上限を超えます。期間を分けてください。");
-        await this.sink.write(bytes);
-        this.offset += bytes.length;
-      }
-
-      async add(name, parts) {
-        if (this.central.length >= 65535)
-          throw new Error("ZIPのファイル件数上限です。期間を分けてください。");
-
-        const filename = encoder.encode(name);
-        const localOffset = this.offset;
-        const { b, v } = binaryHeader(30 + filename.length);
-        v.setUint32(0, 0x04034b50, true);
-        v.setUint16(4, 20, true);
-        v.setUint16(6, 0x0808, true);
-        v.setUint16(12, 0x21, true);
-        v.setUint16(26, filename.length, true);
-        b.set(filename, 30);
-        await this.write(b);
-
-        let crc = 0xffffffff, size = 0;
-        for await (const bytes of parts) {
-          crc = crcUpdate(crc, bytes);
-          size += bytes.length;
-          if (size > 0xffffffff)
-            throw new Error("ZIP内ファイルのサイズ上限です。");
-          await this.write(bytes);
-        }
-        crc = (crc ^ 0xffffffff) >>> 0;
-
-        const descriptor = binaryHeader(16);
-        descriptor.v.setUint32(0, 0x08074b50, true);
-        descriptor.v.setUint32(4, crc, true);
-        descriptor.v.setUint32(8, size, true);
-        descriptor.v.setUint32(12, size, true);
-        await this.write(descriptor.b);
-        this.central.push({ filename, localOffset, crc, size });
-      }
-
-      async finish() {
-        const start = this.offset;
-        for (const f of this.central) {
-          const { b, v } = binaryHeader(46 + f.filename.length);
-          v.setUint32(0, 0x02014b50, true);
-          v.setUint16(4, 20, true);
-          v.setUint16(6, 20, true);
-          v.setUint16(8, 0x0808, true);
-          v.setUint16(14, 0x21, true);
-          v.setUint32(16, f.crc, true);
-          v.setUint32(20, f.size, true);
-          v.setUint32(24, f.size, true);
-          v.setUint16(28, f.filename.length, true);
-          v.setUint32(42, f.localOffset, true);
-          b.set(f.filename, 46);
-          await this.write(b);
-        }
-
-        const size = this.offset - start;
-        const { b, v } = binaryHeader(22);
-        v.setUint32(0, 0x06054b50, true);
-        v.setUint16(8, this.central.length, true);
-        v.setUint16(10, this.central.length, true);
-        v.setUint32(12, size, true);
-        v.setUint32(16, start, true);
-        await this.write(b);
-        await this.sink.close();
-      }
-    }
-
-    async function* textParts(text) {
-      yield encoder.encode(text);
-    }
-
-    async function* blobParts(blob) {
-      if (blob.stream) {
-        const reader = blob.stream().getReader();
-        try {
-          while (true) {
-            const x = await reader.read();
-            if (x.done) break;
-            yield x.value;
-          }
-        } finally {
-          reader.releaseLock();
-        }
-      } else {
-        for (let i = 0; i < blob.size; i += 1024 * 1024)
-          yield new Uint8Array(
-            await blob.slice(i, i + 1024 * 1024).arrayBuffer()
-          );
-      }
-    }
-
-async function inspectAudioPlan(p) {
-  const entries = [];
-  const r = p.r;
-  const independent = r.audioCaptureMode === "independent-pcm-wav";
-  for (let seq = p.first; seq < p.last; seq++) {
-    const part = await getPart("audio", r.id, seq);
-    if (!part?.blob) throw new Error(`音声チャンクが欠落しています：${r.id}/${seq}`);
-    const ext = independent ? "wav" : audioExtension(part.mime || r.audioMime);
-    const path = `audio/${independent ? "chunk" : "fragment"}_${String(seq + 1).padStart(6,"0")}.${ext}`;
-    const start = independent ? part.startOffsetMs :
-      Number.isFinite(part.startMs) ? part.startMs - r.startMs : null;
-    const end = independent ? part.endOffsetMs :
-      Number.isFinite(part.endMs) ? part.endMs - r.startMs : null;
-    entries.push({
-      path,sequence:seq,byteLength:part.blob.size,
-      mimeType:part.mime || r.audioMime,
-      independentlyPlayable:independent && part.independentlyPlayable === true,
-      startOffsetMs:start,
-      endOffsetMs:end,
-      durationMs:independent ? part.durationMs : null,
-      durationFrames:independent ? part.durationFrames : null,
-      sampleRate:independent ? part.sampleRate : null,
-      channels:independent ? part.channels : null,
-      bitsPerSample:independent ? part.bitsPerSample : null,
-      timestampBasis:independent ?
-        "audio-context-sample-clock" : "dataavailable-receipt-estimate",
-      synchronization:"unverified",
-      reconstruction:independent ? null : {
-        groupId:r.id,method:"byte-concatenate-all-fragments-in-sequence",
-        requiresAllSessionFragments:true,
-        totalFragmentCount:r.audioChunkCount
-      }
-    });
-  }
-  if (entries.length) {
-    const first = entries[0], last = entries[entries.length - 1];
-    if (Number.isFinite(first.startOffsetMs)) p.from = Math.max(0, first.startOffsetMs);
-    if (Number.isFinite(last.endOffsetMs)) p.to = Math.max(p.from, last.endOffsetMs);
-    if (p.volume === 1) p.from = 0;
-    if (p.volume === p.total) p.to = Math.max(p.to, elapsed(r));
-  }
-  return entries;
-}
-
-function audioExtension(mime = "") {
-  return mime.includes("wav") ? "wav" :
-    mime.includes("mp4") ? "m4a" :
-    mime.includes("ogg") ? "ogg" :
-    mime.includes("webm") ? "webm" : "bin";
-}
-
-async function* logJsonParts(p) {
-  yield encoder.encode(JSON.stringify({
-    sessionId:p.r.id,
-    range:{startOffsetMs:p.from,endOffsetMs:p.to},
-    intervalConvention:"window end in (startOffsetMs,endOffsetMs]",
-    timestamps:"estimated epoch from session start plus AudioContext sample clock",
-    synchronization:"unverified"
-  }).slice(0,-1) + ',"samples":[');
-  let first = true;
-  for (let seq = 0; seq < p.r.logBatchCount; seq++) {
-    const batch = await getPart("logs",p.r.id,seq);
-    if (!batch) throw new Error(`保存ログが欠落しています：${p.r.id}/${seq}`);
-    let text = "";
-    for (const row of batch.rows) {
-      if (!Number.isFinite(row.offsetMs)) throw new Error("ログの経過時刻が不正です。");
-      if (row.offsetMs <= p.from || row.offsetMs > p.to + 0.001) continue;
-      const soundValid = Number.isFinite(row.soundDbfs) || Number.isFinite(row.soundRms);
-      const motionValid = Number.isFinite(row.motionMagnitude);
-      const record = {
-        ...row,
-        utcTimestamp:new Date(row.tMs).toISOString(),
-        motionMagnitudeG:motionValid ? row.motionMagnitude / 9.80665 : null,
-        missing:{
-          sound:soundValid ? "available" : "unavailable",
-          motion:motionValid ? "available" : "unavailable",
-          soundEvaluation:row.soundDetected === null || row.soundDetected === undefined ?
-            "not-evaluated" : "evaluated"
-        },
-        synchronization:"unverified"
-      };
-      text += (first ? "" : ",") + JSON.stringify(record);
-      first = false;
-    }
-    if (text) yield encoder.encode(text);
-  }
-  yield encoder.encode("]}");
-}
-
-async function* storedAudioParts(r, seq) {
-  const part = await getPart("audio",r.id,seq);
-  if (!part?.blob) throw new Error(`音声が欠落しています：${r.id}/${seq}`);
-  yield* blobParts(part.blob);
-}
-async function buildZip(writer, plan, progress = () => {}) {
-  const entries = await inspectAudioPlan(plan);
-  const r = plan.r;
-  const independent = r.audioCaptureMode === "independent-pcm-wav";
-  const end = r.endMs || r.lastDataMs || r.startMs;
-  const manifest = {
-    format:"zip-store-v1",
-    schemaRevision:"somnolog-005-draft-1",
-    schemaStatus:"reader-interoperability-unverified",
-    application:{name:"SomnoLog",version:r.appVersion || "legacy",exporterVersion:"005"},
-    sessionId:r.id,
-    patientId:r.patientId || "unassigned-" + safeId(r.id),
-    patientIdStatus:r.patientId ? "assigned" : "legacy-unlinked",
-    recordingStartEpochMs:r.startMs,
-    recordingEndEpochMs:end,
-    recordingStartUtc:new Date(r.startMs).toISOString(),
-    recordingEndUtc:new Date(end).toISOString(),
-    timezone:r.timezone || null,
-    volume:{
-      number:plan.volume,total:plan.total,
-      startOffsetMs:plan.from,endOffsetMs:plan.to,
-      setId:r.id,
-      containsEntireRecording:plan.total === 1
-    },
-    sampleRate:independent ? CONFIG.pcmSampleRate : r.audioSettings?.sampleRate || null,
-    inputSampleRate:r.audioContextSampleRate || null,
-    evaluationWindowMs:r.settings?.sampleMs || 100,
-    sound:{
-      dbUnit:"dBFS; not calibrated sound pressure",
-      baselineDb:Number.isFinite(r.baselineDb) ? r.baselineDb : null,
-      baselineDurationMs:r.settings?.baselineMs || null,
-      detectionDeltaDb:r.settings?.soundDeltaDb || null
-    },
-    motion:{
-      rawUnit:"m/s2",exportAdditionalUnit:"g",
-      conversion:"g = m/s2 / 9.80665",
-      originalThresholdM_s2:r.settings?.motionThreshold ?? null,
-      note:"従来のしきい値と計測方式を変更していない"
-    },
-    audio:{
-      mode:independent ? "independent-pcm-wav" : "legacy-dependent-fragments",
-      files:entries.length,
-      sessionFileCount:r.audioChunkCount || 0,
-      index:"audio-index.json",
-      nominalChunkMs:independent ? CONFIG.audioChunkMs : null,
-      channels:independent ? 1 : null,
-      bitsPerSample:independent ? 16 : null,
-      resampling:independent ?
-        "100ms window local bin-average to 16kHz; not high-fidelity resampling" : null,
-      partialFinalWindow:"sub-100ms tail not captured by v005 PCM path"
-    },
-    synchronization:{
-      status:"unverified",targetToleranceMs:100,measuredToleranceMs:null,
-      audioAndSound:"same AudioWorklet input and 100ms windows for v005 recordings",
-      epochAnchor:"start request epoch; first completed input window is offset origin",
-      motion:"latest sensor event at sound window receipt; strict alignment unverified",
-      note:"AudioContext停止時は中断停止する。±100msを保証しない。"
-    },
-    quality:{
-      recordingStatus:r.status,stopReason:r.stopReason || null,
-      error:r.error || null,gapCount:r.gapCount || 0,
-      incomplete:r.status !== "completed",
-      audioIndependent:independent
-    },
-    sessionSummary:{
-      elapsedMs:elapsed(r),sampleCount:r.sampleCount,
-      soundObservedMs:r.soundObservedMs,
-      motionObservedMs:r.motionObservedMs,
-      soundDetectedMs:r.soundDetectedMs,
-      motionDetectedMs:r.motionDetectedMs
-    },
-    events:r.events || [],
-    files:["manifest.json","log.json","audio-index.json","README.txt","audio/"]
-  };
-  await writer.add("manifest.json",textParts(JSON.stringify(manifest,null,2)));
-  await writer.add("audio-index.json",textParts(JSON.stringify({
-    sessionId:r.id,volume:manifest.volume,
-    timeline:"offset milliseconds from recording origin",
-    entries
-  },null,2)));
-  await writer.add("log.json",logJsonParts(plan));
-  const readme = [
-    "SomnoLog / zip-store-v1 / schema draft somnolog-005-draft-1",
-    "正式なSomnoGraph読み込み互換性は未検証。",
-    `セッション：${r.id}`,
-    `匿名ID：${manifest.patientId}（${manifest.patientIdStatus}）`,
-    `分冊：${plan.volume}/${plan.total}`,
-    `収録範囲：${plan.from}〜${plan.to} ms。オフセットは分冊ごとにゼロへ戻さない。`,
-    "全分冊を保持し、sessionIdとvolume.numberで組み合わせる。",
-    "log.jsonのsamplesは評価窓の終了時刻で範囲選択。",
-    "null / unavailableは欠測。false / 0は取得済みの判定なし・ゼロと区別。",
-    "開始10秒は環境音基準測定。音の検出集計対象外。",
-    "dBFSは音圧ではない。診断・いびき分類を行わない。",
-    "体動の元単位はm/s2。G値を追加し、既存の判定しきい値は変更していない。",
-    "音声・体動の同期精度は未確認。±100msは目標で保証値ではない。",
-    independent ?
-      "audio/chunk_*.wavは単独再生可能な16kHz・モノラル・16bit PCM。簡易間引き。停止時100ms未満の端数は未収録。" :
-      "旧音声：audio/fragment_*は単独再生非保証。全分冊の全断片をsequence順でバイト連結して元ストリームを再構成する。受信時刻は実音声境界ではない。",
-    r.patientId ? "" : "旧記録の匿名IDは未紐付け。受付・カルテ対応を別途確認する。",
-    "欠測・中断区間を架空データや無音で補完しない。",
-    "ZIP作成は端末内。送信は利用者の共有操作のみ。"
-  ].filter(Boolean).join("\r\n");
-  await writer.add("README.txt",textParts(readme));
-  for (let i = 0; i < entries.length; i++) {
-    await writer.add(entries[i].path,storedAudioParts(r,entries[i].sequence));
-    progress((i + 1) / entries.length * 95);
-  }
-  await writer.finish(); progress(100);
-}
-    function downloadBlob(blob, name) {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = name;
-      document.body.append(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 60000);
-    }
-
-async function exportZip() {
-  if (exporting || updating || state !== "idle") return;
-  const plan = exportPlans[exportPlanIndex];
-  if (!plan) return;
-  exporting = true; updateControls(); refreshExportLabel();
-  el("share-close").disabled = true;
-  el("zip-progress").hidden = false; el("zip-progress").value = 0;
-  let writable = null, parts = [], size = 0;
-  const name = planFilename(plan);
-  try {
-    let sink;
-    if (window.showSaveFilePicker) {
-      const handle = await window.showSaveFilePicker({
-        suggestedName:name,
-        types:[{description:"ZIP",accept:{"application/zip":[".zip"]}}]
-      });
-      writable = await handle.createWritable();
-      sink = {write:b => writable.write(b),close:() => writable.close()};
-    } else {
-      sink = {
-        write:async b => {
-          size += b.length;
-          if (size > CONFIG.memoryExportLimit)
-            throw new Error("この分冊が128MiBを超えました。直接ファイル保存対応ブラウザーを使用してください。");
-          parts.push(b);
-        },
-        close:async () => {}
-      };
-    }
-    el("share-status").textContent = "ZIP作成中。ファイルを外部送信していません。";
-    await buildZip(new ZipWriter(sink),{...plan},v => el("zip-progress").value = v);
-    if (writable) {
-      finishExportPart();
-    } else {
-      const file = new File(parts,name,{type:"application/zip"});
-      parts = [];
-      let canShare = false;
-      try { canShare = !!navigator.share && !!navigator.canShare?.({files:[file]}); } catch {}
-      if (canShare) {
-        preparedShare = {file,name};
-        el("share-status").textContent = "分冊ZIP作成完了。同じボタンをもう一度押して共有してください。";
-      } else {
-        downloadBlob(file,name); finishExportPart();
-      }
-    }
-  } catch (e) {
-    if (writable) { try { await writable.abort(); } catch {} }
-    parts = [];
-    el("share-status").textContent = e.name === "AbortError" ?
-      "保存をキャンセルしました。同じ分冊を再試行できます。" :
-      "ZIP作成・保存失敗：" + errorText(e);
-  } finally {
-    exporting = false;
-    el("share-close").disabled = false;
-    updateControls(); refreshExportLabel();
-  }
-}
-async function shareOrExport() {
-  if (exporting || updating) return;
-  if (!preparedShare) return exportZip();
-  const {file,name} = preparedShare;
-  exporting = true; updateControls(); refreshExportLabel();
-  el("share-close").disabled = true;
-  try {
-    await navigator.share({files:[file],title:"SomnoLog 睡眠記録"});
-    finishExportPart();
-  } catch (e) {
-    if (e.name === "AbortError") {
-      el("share-status").textContent = "共有をキャンセルしました。同じ分冊を再共有できます。";
-    } else {
-      downloadBlob(file,name); finishExportPart();
-    }
-  } finally {
-    exporting = false;
-    el("share-close").disabled = false;
-    updateControls(); refreshExportLabel();
-  }
-}
-    function updateClock() {
-      const d = new Date();
-      const text = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-      el("black-clock").textContent = text;
-      el("black-clock").dateTime = text;
-    }
-
-    function setClockState(s) {
-      el("black-screen").dataset.clockState = s;
-      el("black-back").disabled = s === "off";
-      el("black-screen").setAttribute(
-        "aria-label",
-        s === "off"
-          ? "黒画面。タップで時計、1.5秒長押しで記録画面へ"
-          : "時計。タップで明るく表示、1.5秒長押しまたは戻るボタンで記録画面へ"
-      );
-      if (s === "off" && document.activeElement === el("black-back"))
-        el("black-screen").focus();
-    }
-
-    function wakeClock() {
-      updateClock();
-      setClockState("bright");
+    function showScreen(id) {
+      closeDialogs();
       clearTimeout(clockHideTimer);
-      clockHideTimer = setTimeout(() => setClockState("off"), 3000);
-    }
-
-    function leaveBlackScreen() {
-      clearTimeout(clockHideTimer);
-      clearTimeout(longTimer);
       el("black-screen").hidden = true;
       document.body.style.overflow = "";
-      el("black-button").focus();
+      ["capture-screen", "record-screen", "calendar-screen"]
+        .forEach(name => { el(name).hidden = name !== id; });
+      window.scrollTo(0, 0);
+      const heading = id === "capture-screen" ? "capture-heading"
+        : id === "record-screen" ? "result-heading" : "calendar-heading";
+      el(heading).focus();
     }
 
-    let press = null, suppressClickUntil = 0;
-    function cancelLong() {
-      clearTimeout(longTimer);
-      longTimer = null;
-      press = null;
-    }
-
-    const black = el("black-screen");
-    black.addEventListener("pointerdown", e => {
-      if (e.button !== 0 || e.target.closest("#black-back")) return;
-      cancelLong();
-      press = { id: e.pointerId, x: e.clientX, y: e.clientY };
-      black.setPointerCapture?.(e.pointerId);
-      longTimer = setTimeout(() => {
-        suppressClickUntil = performance.now() + 1000;
-        cancelLong();
-        leaveBlackScreen();
-      }, 1500);
-    });
-
-    black.addEventListener("pointermove", e => {
-      if (
-        press && e.pointerId === press.id &&
-        Math.hypot(e.clientX - press.x, e.clientY - press.y) > 12
-      ) {
-        suppressClickUntil = performance.now() + 1000;
-        cancelLong();
-      }
-    });
-    black.addEventListener("pointerup", cancelLong);
-    black.addEventListener("pointercancel", () => {
-      suppressClickUntil = performance.now() + 1000;
-      cancelLong();
-    });
-    black.addEventListener("lostpointercapture", cancelLong);
-    black.addEventListener("contextmenu", e => e.preventDefault());
-
-    black.addEventListener("click", e => {
-      if (performance.now() < suppressClickUntil) {
-        e.preventDefault();
-        e.stopPropagation();
+    function setDuration(node, ms) {
+      node.replaceChildren();
+      if (!Number.isFinite(ms)) {
+        node.textContent = "取得できず";
         return;
       }
-      if (e.target.closest("#black-back") || black.hidden) return;
-      wakeClock();
-    });
-
-    black.addEventListener("keydown", e => {
-      if (e.target !== black) return;
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        wakeClock();
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        leaveBlackScreen();
-      }
-    });
-
-    el("black-back").addEventListener("click", e => {
-      e.stopPropagation();
-      leaveBlackScreen();
-    });
-    el("black-button").addEventListener("click", () => {
-      if (state !== "recording") return;
-      updateClock();
-      black.hidden = false;
-      document.body.style.overflow = "hidden";
-      setClockState("dim");
-      clearTimeout(clockHideTimer);
-      black.focus();
-    });
-
-    const clockTimer = setInterval(() => {
-      if (!black.hidden) updateClock();
-    }, 1000);
-
-    // iPhoneの権限要求は利用者のボタンクリックから直接呼び出す。
-    el("microphone-permission").addEventListener("click", acquireMic);
-    el("motion-permission").addEventListener("click", acquireMotion);
-    el("start").addEventListener("click", startRecording);
-    el("stop-button").addEventListener("click", () => stopRecording());
-
-    el("capture-help-button").addEventListener(
-      "click", () => el("usage-dialog").showModal()
-    );
-    el("record-back").addEventListener(
-      "click", () => showScreen("capture-screen")
-    );
-    el("calendar-button").addEventListener("click", async () => {
-      try {
-        await refreshRecords();
-        showScreen("calendar-screen");
-      } catch (e) {
-        showMessage("読み込み失敗", errorText(e));
-      }
-    });
-    el("calendar-back").addEventListener("click", () => {
-      if (currentResult) showScreen("record-screen");
-    });
-    el("save-button").addEventListener("click", () => {
-      if (!currentResult) return;
-      el("save-range").textContent = rangeText(currentResult);
-      el("save-status").textContent =
-        "記録中から自動保存しています。カレンダー保存は一覧への登録確定です。";
-      el("save-dialog").showModal();
-    });
-    el("save-calendar").addEventListener("click", registerCurrent);
-    el("share-current").addEventListener("click", () => {
-      if (currentResult) openShare([currentResult], "current");
-    });
-    el("single-mode").addEventListener("click", () => {
-      mode = "single"; render();
-    });
-    el("range-mode").addEventListener("click", () => {
-      mode = "range"; render();
-    });
-    el("reset-range").addEventListener("click", () => {
-      rangeStart = null; rangeEnd = null; render();
-    });
-    el("prev-month").addEventListener("click", () => {
-      month = new Date(month.getFullYear(), month.getMonth() - 1, 1);
-      renderCalendar();
-    });
-    el("next-month").addEventListener("click", () => {
-      month = new Date(month.getFullYear(), month.getMonth() + 1, 1);
-      renderCalendar();
-    });
-    el("share-button").addEventListener("click", () => openShare());
-    el("zip-save").addEventListener("click", shareOrExport);
-    el("clinic-button").addEventListener("click", () => {
-      el("share-status").textContent =
-        "保存したZIPを診療所の窓口で提示し、受け取り方法をご相談ください。診療所への自動送信はありません。";
-    });
-    el("share-dialog").addEventListener("cancel", e => {
-      if (exporting) e.preventDefault();
-    });
-    el("share-dialog").addEventListener("close", () => {
-      preparedShare = null;
-    });
-
-    for (const id of ["result-help-button", "calendar-help-button"]) {
-      el(id).addEventListener("click", () => showMessage(
-        "記録・カレンダー・共有の使い方",
-        "録音中から端末内へ自動保存します。「カレンダーに保存」で一覧への登録が確定します。1日または期間を選んでZIPを書き出せます。開始10秒は環境音測定、その後は相対＋10dBで音を検出します。診断ではありません。画面ロックや別アプリへの切替で録音が中断する場合があります。"
-      ));
-    }
-
-    document.addEventListener("visibilitychange", () => {
-      if (state !== "recording" || !session) return;
-      session.events.push({
-        utc: new Date().toISOString(),
-        type: "visibility", value: document.visibilityState
+      const total = Math.max(0, Math.round(ms / 1000));
+      const units = [
+        [Math.floor(total / 3600), "時間"],
+        [Math.floor(total % 3600 / 60), "分"],
+        [total % 60, "秒"]
+      ];
+      units.forEach(([number, unit]) => {
+        node.append(document.createTextNode(String(number)));
+        const small = document.createElement("small");
+        small.textContent = unit;
+        node.append(small);
       });
-      flushRows();
-      if (!document.hidden) {
-        audioContext.resume().catch(() => {});
-        requestWakeLock();
-      }
-    });
-
-    window.addEventListener("beforeunload", e => {
-      if (["starting", "recording", "stopping"].includes(state)) {
-        e.preventDefault();
-        e.returnValue = "";
-      }
-    });
-    window.addEventListener("pagehide", () => {
-      if (state === "recording") flushRows();
-    });
-
-    function reloadFresh() {
-      const url = new URL(location.href);
-      url.searchParams.set("_somnolog", String(Date.now()));
-      location.replace(url.href);
     }
 
-    function allowUpdate() {
-      return state === "idle" && !exporting && !updating && !permissionBusy;
+    function datetime(ms) {
+      if (!Number.isFinite(ms)) return "取得できず";
+      const d = new Date(ms);
+      return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} `
+        + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
     }
 
-    // ネットワーク再取得を要求するクエリとcache:no-storeを併用する。
-    // キャッシュやService Workerの全挙動を保証するものではない。
-    el("app-reload").addEventListener("click", () => {
-      if (!allowUpdate()) return;
-      reloadFresh();
-    });
+    function isoLocal(ms) {
+      const d = new Date(ms);
+      const offset = -d.getTimezoneOffset();
+      const sign = offset >= 0 ? "+" : "-";
+      const absolute = Math.abs(offset);
+      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+        + `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+        + `.${String(d.getMilliseconds()).padStart(3, "0")}`
+        + `${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
+    }
 
-    async function fetchUpdate(url, accept, jsonBody = false) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 20000);
-      const u = new URL(url);
-      u.searchParams.set("_somnolog", String(Date.now()));
+    function sessionDate(session) {
+      const d = new Date(session.recording.startEpochMs);
+      return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+    }
 
-      try {
-        const r = await fetch(u.href, {
-          cache: "no-store",
-          signal: controller.signal,
-          headers: { Accept: accept }
-        });
-        if (!r.ok) throw new Error("取得失敗 HTTP " + r.status);
-        // 本文の読み込み完了までタイムアウトを有効にする。
-        return await (jsonBody ? r.json() : r.text());
-      } finally {
-        clearTimeout(timer);
+    function rangeText(session) {
+      if (!session) return "記録なし";
+      return `${datetime(session.recording.startEpochMs)} → `
+        + `${datetime(session.recording.endEpochMs)}`;
+    }
+
+    function renderSummary(session) {
+      currentSession = session || null;
+      el("result-range").textContent = rangeText(session);
+      el("save-range").textContent = rangeText(session);
+      el("save-button").disabled = !session;
+      if (!session) {
+        el("result-year").textContent = "記録なし";
+        el("result-time-detail").textContent = "端末内に完了記録はありません。";
+        setDuration(el("result-duration"), null);
+        setDuration(el("sound-duration"), null);
+        setDuration(el("motion-duration"), null);
+        return;
       }
+      const date = new Date(session.recording.startEpochMs);
+      el("result-year").textContent =
+        `${date.getFullYear()}年の記録／${session.appVersion}`;
+      setDuration(el("result-duration"), session.recording.totalDurationMs);
+      setDuration(el("sound-duration"), session.metrics.soundDetectedMs);
+      setDuration(el("motion-duration"), session.metrics.motionDetectedMs);
+      el("record-screen").querySelector(".badge").textContent =
+        session.state === "recovered" ? "中断回復" : "記録終了";
+      const mib = (session.audioBytes / 1048576).toFixed(2);
+      el("result-time-detail").textContent =
+        `${session.audioChunkCount}チャンク／音声 ${mib} MiB／`
+        + `音・体動集計はPhase 3未実装。`
+        + (session.state === "recovered"
+          ? "終了日時は最後に保存済みのチャンク境界です。未保存区間は不明。"
+          : "")
+        + (session.fault ? ` 異常：${session.fault}` : "");
+      el("save-status").textContent = session.calendarSaved
+        ? "カレンダー登録済み。音声とセッションは端末内に保存されています。"
+        : "音声とセッションは端末内に保存済み。カレンダーへの登録は下のボタンで行います。";
     }
 
-    el("app-update").addEventListener("click", async () => {
-      if (!allowUpdate()) return;
-      updating = true;
-      updateControls();
+    function updateControls() {
+      const busy = starting || stopping || updating || disposed;
+      const liveTrack = stream && stream.getAudioTracks()
+        .some(track => track.readyState === "live");
+      ready.microphone = Boolean(liveTrack);
+      el("start").disabled = busy || recording || !db || !ownsRuntime
+        || !ready.microphone || !ready.motion;
+      el("stop-button").disabled = !recording || stopping;
+      el("black-button").disabled = !recording || stopping;
+      el("history-button").disabled = recording || busy || !db;
+      el("microphone-permission").disabled = recording || busy || !ownsRuntime;
+      el("motion-permission").disabled = recording || busy || !ownsRuntime;
+      el("microphone-permission").hidden = ready.microphone;
+      el("motion-permission").hidden = ready.motion;
+    }
 
-      try {
-        el("app-update-status").textContent =
-          "GitHubのmainブランチ最新コミットを確認中…";
+    function openDatabase() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = () => {
+          const database = request.result;
+          if (!database.objectStoreNames.contains("sessions")) {
+            database.createObjectStore("sessions", { keyPath: "sessionId" });
+          }
+          for (const name of ["sessionLogs", "profileBins", "clips", "audioChunks"]) {
+            if (!database.objectStoreNames.contains(name)) {
+              const store = database.createObjectStore(name, { keyPath: "id" });
+              store.createIndex("sessionId", "sessionId", { unique: false });
+            }
+          }
+        };
+        request.onblocked = () => {
+          showMessage("保存領域の更新待ち",
+            "旧版を開いている別タブを閉じてください。IndexedDBを更新できません。");
+        };
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const database = request.result;
+          const required = [
+            "sessions", "sessionLogs", "profileBins", "clips", "audioChunks"
+          ];
+          if (!required.every(name => database.objectStoreNames.contains(name))) {
+            database.close();
+            reject(new Error("既存IndexedDBのストア構成が正本仕様と異なります。削除せず停止しました。"));
+            return;
+          }
+          database.onversionchange = () => {
+            if (recording) emergencyStop(new Error("IndexedDBのバージョンが変更されました。"));
+            database.close();
+            db = null;
+            updateControls();
+          };
+          resolve(database);
+        };
+      });
+    }
 
-        const commit = await fetchUpdate(
-          "https://api.github.com/repos/" + UPDATE_REPO + "/commits/main",
-          "application/vnd.github+json",
-          true
-        );
-        const sha = commit.sha;
-        if (!/^[a-f0-9]{40}$/.test(sha || ""))
-          throw new Error("最新コミットを確認できません。");
-
-        // mainの可変URLではなく取得済みSHAに固定する。
-        const html = await fetchUpdate(
-          "https://raw.githubusercontent.com/" +
-            UPDATE_REPO + "/" + sha + "/index.html",
-          "text/html"
-        );
-        if (html.length > 2000000)
-          throw new Error("更新ファイルが大きすぎます。");
-
-        const doc = new DOMParser().parseFromString(html, "text/html");
-        const requiredIds = [
-          "capture-screen", "microphone-path", "motion-path",
-          "microphone-permission", "motion-permission",
-          "record-screen", "calendar-screen", "start", "stop-button",
-          "app-reload", "app-update", "app-update-status"
-        ];
-        for (const id of requiredIds) {
-          if (!doc.getElementById(id))
-            throw new Error("更新版に必要な領域がありません：" + id);
-        }
-
-        const versionText = doc.documentElement.dataset.somnologVersion;
-        const candidateVersion = Number(versionText);
-        const currentVersion =
-          Number(document.documentElement.dataset.somnologVersion);
-        if (
-          !/^\d+$/.test(versionText || "") ||
-          !Number.isInteger(candidateVersion) ||
-          candidateVersion < currentVersion
-        ) {
-          throw new Error("対応版ではないか、現在より古い版です。適用しません。");
-        }
-
-        const scripts = [...doc.querySelectorAll("script")];
-        if (!scripts.length)
-          throw new Error("更新版に実行スクリプトがありません。");
-        if (scripts.some(s =>
-          s.hasAttribute("src") ||
-          (s.type && s.type !== "text/javascript" &&
-            s.type !== "application/javascript")
-        )) {
-          throw new Error(
-            "この更新機構は単一HTMLの通常スクリプトのみ対応します。"
-          );
-        }
-        for (const script of scripts) {
-          if (!script.textContent.trim())
-            throw new Error("更新版のスクリプトが空です。");
-          new Function(script.textContent);
-        }
-
-        if (
-          document.documentElement.dataset.somnologCommit === sha &&
-          candidateVersion === currentVersion
-        ) {
-          el("app-update-status").textContent =
-            "このコミットは適用済みです：" + sha.slice(0, 12);
+    function transaction(names, mode, run) {
+      return new Promise((resolve, reject) => {
+        if (!db) {
+          reject(new Error("IndexedDBが利用できません。"));
           return;
         }
-
-        if (!confirm(
-          "GitHubのSomnoLog v" + versionText +
-          "を適用します。コミット " + sha.slice(0, 12) +
-          "。端末内の記録は削除しません。よろしいですか？"
-        )) {
-          el("app-update-status").textContent = "更新をキャンセルしました。";
-          return;
-        }
-
-        doc.documentElement.dataset.somnologCommit = sha;
-        const verifiedHtml =
-          "<!DOCTYPE html>\n" + doc.documentElement.outerHTML;
-
-        // 保存容量不足等の場合はここで中止し、現ページを継続する。
-        const previousCache = localStorage.getItem(UPDATE_CACHE_KEY);
+        let result;
+        let tx;
         try {
-          localStorage.setItem(UPDATE_CACHE_KEY, verifiedHtml);
-          sessionStorage.setItem(STAGED_UPDATE_KEY, verifiedHtml);
-        } catch (e) {
-          try {
-            if (previousCache === null)
-              localStorage.removeItem(UPDATE_CACHE_KEY);
-            else
-              localStorage.setItem(UPDATE_CACHE_KEY, previousCache);
-            sessionStorage.removeItem(STAGED_UPDATE_KEY);
-          } catch {}
-          throw e;
+          tx = db.transaction(names, mode);
+          tx.oncomplete = () => resolve(result);
+          tx.onerror = () => reject(tx.error || new Error("保存トランザクション失敗"));
+          tx.onabort = () => reject(tx.error || new Error("保存トランザクション中断"));
+          run(tx, value => { result = value; });
+        } catch (error) {
+          if (tx) {
+            try { tx.abort(); } catch (_) {}
+          }
+          reject(error);
         }
+      });
+    }
 
-        el("app-update-status").textContent =
-          "更新版を保存しました。再読み込みして適用します。";
-        cancelAnimationFrame(animation);
-        clearInterval(clockTimer);
-        clearTimeout(clockHideTimer);
-        clearTimeout(longTimer);
+    function getRecord(store, key) {
+      return transaction([store], "readonly", (tx, setResult) => {
+        const request = tx.objectStore(store).get(key);
+        request.onsuccess = () => setResult(request.result);
+      });
+    }
 
-        if (motionRequested)
-          window.removeEventListener("devicemotion", motionHandler);
+    function getSessions() {
+      return transaction(["sessions"], "readonly", (tx, setResult) => {
+        const request = tx.objectStore("sessions").getAll();
+        request.onsuccess = () => setResult(request.result);
+      });
+    }
 
-        await releaseMicResources();
-        db?.close();
+    function putSession(session) {
+      return transaction(["sessions"], "readwrite", tx => {
+        tx.objectStore("sessions").put(session);
+      });
+    }
 
-        reloadFresh();
-      } catch (e) {
-        el("app-update-status").textContent =
-          "更新未適用：" + errorText(e);
-      } finally {
-        updating = false;
-        updateControls();
+    async function patientId() {
+      const registered = await getRecord("clips", "somnolog_patient_id");
+      if (registered) {
+        const value = registered.patientId || registered.value;
+        if (typeof value === "string" && value.trim()) return value.trim();
       }
-    });
-
-    async function initialize() {
-      render();
-      updateControls();
-
-      const commit = document.documentElement.dataset.somnologCommit;
-      if (commit)
-        el("app-update-status").textContent =
-          "適用コミット：" + commit.slice(0, 12);
-
       try {
-        db = await openDatabase();
-        const recovered = await recoverInterrupted();
-        await refreshRecords();
+        const stored = localStorage.getItem("somnolog_patient_id");
+        if (stored && stored.trim()) return stored.trim();
+      } catch (_) {}
+      return "UNREGISTERED";
+    }
 
-        const ended = records
-          .filter(r => r.status !== "recording")
-          .sort((a, b) => b.startMs - a.startMs);
-        currentResult = ended[0] || null;
+    function claimLease() {
+      return transaction(["clips"], "readwrite", (tx, setResult) => {
+        const store = tx.objectStore("clips");
+        const request = store.get(LEASE_KEY);
+        request.onsuccess = () => {
+          const previous = request.result;
+          const now = Date.now();
+          if (previous && previous.owner !== ownerId && previous.expiresAt > now) {
+            setResult(false);
+            return;
+          }
+          store.put({ id: LEASE_KEY, owner: ownerId, expiresAt: now + LEASE_MS });
+          setResult(true);
+        };
+      });
+    }
 
-        if (currentResult) {
-          renderResult(currentResult);
-          if (!currentResult.registered) showScreen("record-screen");
+    async function renewLease() {
+      if (!db || !ownsRuntime || disposed) return;
+      try {
+        const renewed = await claimLease();
+        if (!renewed) {
+          ownsRuntime = false;
+          updateControls();
+          emergencyStop(new Error("別タブが保存領域の使用権を取得しました。"));
         }
-
-        state = "idle";
+      } catch (error) {
+        ownsRuntime = false;
         updateControls();
-
-        if (recovered.count) {
-          showMessage(
-            "中断記録を復元",
-            `${recovered.count}件の中断を検出しました。終了時刻は最後に保存されたデータの時刻です。保存済み部分だけを復元しています。`
-          );
-        } else if (recovered.live) {
-          showMessage(
-            "未終了の記録があります",
-            "別タブの記録中か、直前の異常終了です。別タブを確認してください。異常終了直後は2分以上待って再読み込みすると、保存済み部分を中断記録として復元します。"
-          );
-        }
-      } catch (e) {
-        state = "unavailable";
-        updateControls();
-        showMessage(
-          "初期化に失敗",
-          errorText(e) + " 保存を利用できないため記録開始を無効にしています。"
-        );
-      }
-
-      if (!window.isSecureContext ||
-          !navigator.mediaDevices?.getUserMedia) {
-        el("microphone-permission").title =
-          "HTTPSまたはlocalhostが必要です";
+        emergencyStop(error);
       }
     }
 
-    initializePatientId();
-    initialize();
-  })();
+    async function releaseLease() {
+      if (!db) return;
+      await transaction(["clips"], "readwrite", tx => {
+        const store = tx.objectStore("clips");
+        const request = store.get(LEASE_KEY);
+        request.onsuccess = () => {
+          if (request.result && request.result.owner === ownerId) {
+            store.delete(LEASE_KEY);
+          }
+        };
+      });
+    }
+
+    async function acquireRuntime() {
+      if (disposed || !db || ownsRuntime) return;
+      const tryAcquire = async () => {
+        const success = await claimLease();
+        if (!success) return false;
+        ownsRuntime = true;
+        clearInterval(leaseTimer);
+        leaseTimer = setInterval(renewLease, 3000);
+        await recoverSessions();
+        await refreshRecords();
+        updateControls();
+        return true;
+      };
+
+      if (navigator.locks && navigator.locks.request) {
+        await new Promise((resolve, reject) => {
+          let resolved = false;
+          navigator.locks.request(
+            "somnolog-recording-runtime",
+            { mode: "exclusive", ifAvailable: true },
+            async lock => {
+              if (!lock) {
+                resolved = true;
+                resolve(false);
+                return;
+              }
+              try {
+                const success = await tryAcquire();
+                if (!success) {
+                  resolved = true;
+                  resolve(false);
+                  return;
+                }
+                resolved = true;
+                resolve(true);
+                await new Promise(done => { releasingRuntime = done; });
+              } catch (error) {
+                if (!resolved) reject(error);
+                else console.error(error);
+              }
+            }
+          ).catch(reject);
+        });
+      } else {
+        await tryAcquire();
+      }
+
+      if (!ownsRuntime && !disposed) {
+        updateControls();
+        clearTimeout(retryTimer);
+        retryTimer = setTimeout(() => {
+          acquireRuntime().catch(error => showMessage("初期化失敗", errorText(error)));
+        }, 3000);
+      }
+    }
+
+    async function recoverSessions() {
+      const sessions = await getSessions();
+      let recoveredCount = 0;
+      for (const session of sessions) {
+        if (session.state !== "recording") continue;
+        // 使用権を取れた後だけ回復する。別タブの録音を完了扱いにしない。
+        const end = Number.isFinite(session.lastPersistedEpochMs)
+          ? session.lastPersistedEpochMs : session.recording.startEpochMs;
+        session.state = "recovered";
+        session.calendarSaved = true;
+        session.recording.endEpochMs = end;
+        session.recording.endTime = isoLocal(end);
+        session.recording.totalDurationMs =
+          Math.max(0, end - session.recording.startEpochMs);
+        session.metrics.dataStatus = "has_missing";
+        session.recovery = {
+          recoveredAt: Date.now(),
+          endTimeBasis: "last_persisted_chunk_boundary",
+          unsavedTailDurationMs: null,
+          audioFinalized: false
+        };
+        session.fault = session.fault || "前回の記録が正常終了していません。未保存区間は不明。";
+        await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
+          tx.objectStore("sessions").put(session);
+          tx.objectStore("sessionLogs").put({
+            id: `${session.sessionId}:recovery:${Date.now()}`,
+            sessionId: session.sessionId,
+            kind: "lifecycle",
+            timestamp: Date.now(),
+            event: "recovered",
+            status: "missing",
+            detail: "保存済みデータのみ回復。音声コンテナの完結・再生は未保証。"
+          });
+        });
+        recoveredCount++;
+      }
+      if (recoveredCount) {
+        showMessage("未完了記録を回復",
+          `${recoveredCount}件を保存済みチャンクの境界まで回復しました。`
+          + "未保存区間は補完していません。音声再生の可否は未確認です。");
+      }
+    }
+
+    function ensureAudioContextFromGesture() {
+      const Constructor = window.AudioContext || window.webkitAudioContext;
+      if (!Constructor) throw new Error("AudioContextに対応していません。");
+      if (!audioContext || audioContext.state === "closed") {
+        try {
+          audioContext = new Constructor({ sampleRate: REQUESTED_SAMPLE_RATE });
+        } catch (_) {
+          audioContext = new Constructor();
+        }
+      }
+      // タップ直下で呼ぶ。ここより前にawaitを置かない。
+      const resumed = audioContext.resume();
+      return resumed || Promise.resolve();
+    }
+
+    function installTrackEvents(mediaStream) {
+      mediaStream.getAudioTracks().forEach(track => {
+        track.addEventListener("ended", () => {
+          ready.microphone = false;
+          updateControls();
+          if (recording) emergencyStop(new Error("マイク入力が終了しました。"));
+        });
+        track.addEventListener("mute", () => {
+          if (recording) emergencyStop(new Error("マイク入力が途絶しました。欠測として停止します。"));
+        });
+      });
+    }
+
+    async function requestMicrophone(resumePromise) {
+      try {
+        await resumePromise;
+        if (!window.isSecureContext || !navigator.mediaDevices
+            || !navigator.mediaDevices.getUserMedia) {
+          throw new Error("HTTPS上でマイク対応ブラウザから開いてください。");
+        }
+        if (stream) stream.getTracks().forEach(track => track.stop());
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            channelCount: { ideal: 1 },
+            sampleRate: { ideal: REQUESTED_SAMPLE_RATE },
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          },
+          video: false
+        });
+        installTrackEvents(stream);
+        ready.microphone = true;
+        updateControls();
+        const settings = stream.getAudioTracks()[0].getSettings();
+        previewMessage("マイク許可済み",
+          `実入力：${settings.sampleRate || "不明"} Hz／`
+          + `${settings.channelCount || "不明"}チャンネル。`
+          + "録音時は32kbpsを要求しますが、エンコード後の実値は別途検証が必要です。"
+          + "入力メーター・100ms集計はPhase 3で実装します。");
+      } catch (error) {
+        ready.microphone = false;
+        updateControls();
+        showMessage("マイクを利用できません", errorText(error));
+      }
+    }
+
+    function onMotion(event) {
+      const acceleration = event.acceleration;
+      const gravity = event.accelerationIncludingGravity;
+      const available = [acceleration, gravity].some(value =>
+        value && [value.x, value.y, value.z].some(Number.isFinite));
+      if (!available) return;
+      lastMotionEvent = Date.now();
+      if (motionWaiter) {
+        motionWaiter();
+        motionWaiter = null;
+      }
+    }
+
+    function waitForMotion(timeoutMs) {
+      return new Promise((resolve, reject) => {
+        if (lastMotionEvent && Date.now() - lastMotionEvent < 2000) {
+          resolve();
+          return;
+        }
+        const timer = setTimeout(() => {
+          motionWaiter = null;
+          reject(new Error("モーションの実入力を取得できません。端末設定とブラウザ対応を確認してください。"));
+        }, timeoutMs);
+        motionWaiter = () => {
+          clearTimeout(timer);
+          resolve();
+        };
+      });
+    }
+
+    async function requestMotion(permissionPromise) {
+      try {
+        if (!window.DeviceMotionEvent) {
+          throw new Error("DeviceMotionEventに対応していません。");
+        }
+        const permission = await permissionPromise;
+        if (permission !== "granted") throw new Error("モーション権限が許可されていません。");
+        if (!motionListenerInstalled) {
+          window.addEventListener("devicemotion", onMotion);
+          motionListenerInstalled = true;
+        }
+        await waitForMotion(7000);
+        ready.motion = true;
+        updateControls();
+        previewMessage("モーション入力確認済み",
+          "実イベントの取得を確認しました。重力除去・100ms窓集計・メーター描画はPhase 3で実装します。");
+      } catch (error) {
+        ready.motion = false;
+        updateControls();
+        showMessage("モーションを利用できません", errorText(error));
+      }
+    }
+
+    function selectMimeType() {
+      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) {
+        throw new Error("MediaRecorderに対応していません。");
+      }
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+        || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      const mp4 = ["audio/mp4", "audio/mp4;codecs=mp4a.40.2"];
+      const webm = ["audio/webm;codecs=opus", "audio/webm"];
+      const candidates = isIOS ? [...mp4, ...webm] : [...webm, ...mp4];
+      const selectedType = candidates.find(type => MediaRecorder.isTypeSupported(type));
+      if (!selectedType) {
+        throw new Error("指定のMP4/AACまたはWebM形式に対応していません。");
+      }
+      return selectedType;
+    }
+
+    function elapsedNow() {
+      return Math.max(0, Math.round(performance.now() - recordingStartMono));
+    }
+
+    async function acquireWakeLock() {
+      if (!recording || document.visibilityState !== "visible"
+          || !navigator.wakeLock) return;
+      try {
+        if (wakeLock && !wakeLock.released) return;
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { wakeLock = null; });
+      } catch (error) {
+        console.warn("画面点灯維持を取得できません:", error);
+      }
+    }
+
+    async function releaseWakeLock() {
+      const lock = wakeLock;
+      wakeLock = null;
+      if (lock && !lock.released) {
+        try { await lock.release(); } catch (_) {}
+      }
+    }
+
+    function enqueueAudio(blob, eventOffset) {
+      if (!activeSession || !blob || !blob.size) return;
+      const session = activeSession;
+      const seq = ++sequence;
+      const previousOffset = lastChunkEventOffset;
+      lastChunkEventOffset = eventOffset;
+      pendingChunks++;
+      if (pendingChunks > 3) {
+        emergencyStop(new Error("音声の保存が録音速度に追いつきません。メモリ増大防止のため停止します。"));
+      }
+
+      saveChain = saveChain.then(async () => {
+        let bytes = null;
+        try {
+          bytes = await blob.arrayBuffer();
+          const id = `${session.sessionId}:${String(seq).padStart(8, "0")}`;
+          const chunk = {
+            id,
+            sessionId: session.sessionId,
+            sequence: seq,
+            mimeType: recorder ? recorder.mimeType : session.audioConfig.mimeType,
+            startOffsetMs: previousOffset,
+            endOffsetMs: eventOffset,
+            durationMs: Math.max(0, eventOffset - previousOffset),
+            offsetBasis: "dataavailable_callback_monotonic_time",
+            isIndependentMediaFile: null,
+            byteLength: bytes.byteLength,
+            data: bytes
+          };
+          const next = structuredClone(session);
+          next.audioBytes += bytes.byteLength;
+          next.audioChunkCount++;
+          next.lastPersistedOffsetMs = eventOffset;
+          next.lastPersistedEpochMs =
+            next.recording.startEpochMs + eventOffset;
+          next.heartbeatEpochMs = Date.now();
+          await transaction(["audioChunks", "sessions"], "readwrite", tx => {
+            tx.objectStore("audioChunks").add(chunk);
+            tx.objectStore("sessions").put(next);
+          });
+          Object.assign(session, next);
+        } catch (error) {
+          recordingFault = recordingFault || errorText(error);
+          emergencyStop(error);
+        } finally {
+          // オブジェクトURLを作らないためrevoke対象はない。
+          // 逐次書込み完了後にArrayBufferとBlobを保持しない。
+          bytes = null;
+          pendingChunks--;
+        }
+      });
+    }
+
+    async function beginRecording(resumePromise) {
+      if (recording || starting || stopping || updating || !ownsRuntime) return;
+      starting = true;
+      updateControls();
+      let sessionWritten = false;
+      try {
+        await resumePromise;
+        if (!await claimLease()) throw new Error("別タブで使用中です。");
+        if (!stream || !stream.getAudioTracks().some(t => t.readyState === "live")) {
+          throw new Error("マイクを再度許可してください。");
+        }
+        if (!ready.motion) throw new Error("モーション入力を先に許可してください。");
+        const mimeType = selectMimeType();
+        const settings = stream.getAudioTracks()[0].getSettings();
+        const startEpochMs = Date.now();
+        const startDate = new Date(startEpochMs);
+        const sessionId = `sess_${startDate.getFullYear()}`
+          + `${pad(startDate.getMonth() + 1)}${pad(startDate.getDate())}_`
+          + `${pad(startDate.getHours())}${pad(startDate.getMinutes())}`
+          + `${pad(startDate.getSeconds())}_${sessionSuffix()}`;
+        const identifier = await patientId();
+        recorder = new MediaRecorder(stream, {
+          mimeType,
+          audioBitsPerSecond: REQUESTED_BITRATE
+        });
+        activeSession = {
+          formatVersion: "zip-store-v1",
+          appVersion: APP_VERSION,
+          implementationPhase: 2,
+          sessionId,
+          patientId: identifier,
+          state: "recording",
+          calendarSaved: false,
+          owner: ownerId,
+          recording: {
+            startTime: isoLocal(startEpochMs),
+            endTime: null,
+            startEpochMs,
+            endEpochMs: null,
+            totalDurationMs: null
+          },
+          metrics: {
+            baselineDbFS: null,
+            soundThresholdDb: 10,
+            motionThresholdG: 0.05,
+            soundDetectedMs: null,
+            motionDetectedMs: null,
+            dataStatus: "unobtainable"
+          },
+          audioConfig: {
+            mimeType: recorder.mimeType || mimeType,
+            sampleRate: null,
+            channels: null,
+            bitrate: recorder.audioBitsPerSecond || null
+          },
+          audioDiagnostics: {
+            requestedSampleRate: REQUESTED_SAMPLE_RATE,
+            requestedChannels: 1,
+            requestedBitrate: REQUESTED_BITRATE,
+            inputSampleRate: settings.sampleRate || null,
+            inputChannels: settings.channelCount || null,
+            audioContextSampleRate: audioContext.sampleRate,
+            encodedSampleRateVerified: false,
+            encodedChannelsVerified: false,
+            chunkPlaybackVerified: false
+          },
+          audioFiles: [],
+          audioBytes: 0,
+          audioChunkCount: 0,
+          lastPersistedEpochMs: startEpochMs,
+          lastPersistedOffsetMs: 0,
+          heartbeatEpochMs: startEpochMs,
+          audioFinalized: false,
+          fault: null
+        };
+        await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
+          tx.objectStore("sessions").add(activeSession);
+          tx.objectStore("sessionLogs").add({
+            id: `${sessionId}:start`,
+            sessionId,
+            kind: "lifecycle",
+            timestamp: startEpochMs,
+            event: "start_requested",
+            detail: "Phase 2。センシングログは未取得。"
+          });
+        });
+        sessionWritten = true;
+        recordingFault = null;
+        sequence = 0;
+        pendingChunks = 0;
+        saveChain = Promise.resolve();
+        lastChunkEventOffset = 0;
+        recorderStopPromise = new Promise(resolve => {
+          recorderStopResolve = resolve;
+        });
+        recorder.addEventListener("dataavailable", event => {
+          enqueueAudio(event.data, elapsedNow());
+        });
+        recorder.addEventListener("error", event => {
+          emergencyStop(event.error || new Error("MediaRecorderのエラー"));
+        });
+        recorder.addEventListener("stop", () => {
+          if (recorderStopResolve) recorderStopResolve();
+          if (recording && !stopping) {
+            emergencyStop(new Error("録音が予期せず終了しました。"));
+          }
+        });
+        // 全ブラウザ共通でtimesliceを渡さない。
+        recordingStartMono = performance.now();
+        recorder.start();
+        recording = true;
+        starting = false;
+        chunkTimer = setInterval(() => {
+          if (!recorder || recorder.state !== "recording" || stopping) return;
+          try { recorder.requestData(); } catch (error) { emergencyStop(error); }
+        }, CHUNK_INTERVAL_MS);
+        heartbeatTimer = setInterval(() => {
+          if (!activeSession || !recording || stopping) return;
+          saveChain = saveChain.then(async () => {
+            activeSession.heartbeatEpochMs = Date.now();
+            try { await putSession(activeSession); }
+            catch (error) { emergencyStop(error); }
+          });
+        }, 5000);
+        updateControls();
+        await acquireWakeLock();
+        previewMessage("記録開始 — Phase 2",
+          "実際の圧縮音声を約30秒ごとに端末内へ保存します。"
+          + "音・体動の検出時間と実測メーターは未実装です。"
+          + "黒画面は画面ロックではありません。手動ロック・背景移行による継続は保証しません。");
+      } catch (error) {
+        recording = false;
+        if (recorder && recorder.state !== "inactive") {
+          try { recorder.stop(); } catch (_) {}
+        }
+        if (sessionWritten && activeSession) {
+          activeSession.state = "recovered";
+          activeSession.calendarSaved = true;
+          activeSession.fault = errorText(error);
+          activeSession.recording.endEpochMs =
+            activeSession.lastPersistedEpochMs;
+          activeSession.recording.endTime =
+            isoLocal(activeSession.lastPersistedEpochMs);
+          activeSession.recording.totalDurationMs = 0;
+          activeSession.metrics.dataStatus = "has_missing";
+          try { await putSession(activeSession); } catch (_) {}
+        }
+        activeSession = null;
+        recorder = null;
+        starting = false;
+        updateControls();
+        showMessage("記録開始に失敗", errorText(error));
+      }
+    }
+
+    function emergencyStop(error) {
+      recordingFault = recordingFault || errorText(error);
+      if (!recording || stopping) return;
+      // 保存キューの内部から呼ばれても、同じキューを再帰的に待たない。
+      queueMicrotask(() => {
+        if (recording && !stopping) {
+          stopRecording().catch(failure => {
+            showMessage("停止処理に失敗", errorText(failure));
+          });
+        }
+      });
+    }
+
+    async function stopRecording() {
+      if (!recording || stopping) return;
+      stopping = true;
+      clearInterval(chunkTimer);
+      clearInterval(heartbeatTimer);
+      updateControls();
+      const session = activeSession;
+      const stopOffset = elapsedNow();
+      const userStopEpochMs = session.recording.startEpochMs + stopOffset;
+      try {
+        if (recorder && recorder.state !== "inactive") recorder.stop();
+        if (recorderStopPromise) {
+          let timer;
+          try {
+            await Promise.race([
+              recorderStopPromise,
+              new Promise((_, reject) => {
+                timer = setTimeout(() => reject(
+                  new Error("MediaRecorderの最終データ待ちが30秒を超えました。")
+                ), 30000);
+              })
+            ]);
+          } finally {
+            clearTimeout(timer);
+          }
+        }
+        // stopイベントに先行する最後のdataavailableを含めて保存完了を待つ。
+        await saveChain;
+        session.state = recordingFault ? "recovered" : "completed";
+        session.calendarSaved = Boolean(recordingFault);
+        session.fault = recordingFault;
+        session.audioFinalized = !recordingFault;
+        const end = recordingFault
+          ? session.lastPersistedEpochMs : userStopEpochMs;
+        session.recording.endEpochMs = end;
+        session.recording.endTime = isoLocal(end);
+        session.recording.totalDurationMs =
+          Math.max(0, end - session.recording.startEpochMs);
+        if (recordingFault) session.metrics.dataStatus = "has_missing";
+        await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
+          tx.objectStore("sessions").put(session);
+          tx.objectStore("sessionLogs").put({
+            id: `${session.sessionId}:stop`,
+            sessionId: session.sessionId,
+                         kind: "lifecycle",
+              timestamp: Date.now(),
+              event: recordingFault ? "stopped_with_error" : "stopped",
+              detail: recordingFault || "最終音声データの保存完了"
+            });
+          });
+          renderSummary(session);
+          await refreshRecords();
+          showScreen("record-screen");
+          if (recordingFault) {
+            showMessage("記録を保存済み範囲まで回復",
+              `${recordingFault} 未保存区間は補完していません。`);
+          }
+        } catch (error) {
+          recordingFault = recordingFault || errorText(error);
+          // 完了書込みに失敗した場合、DB上のrecording状態を残して
+          // 次回起動時の回復対象とする。
+          showMessage("停止・保存処理に失敗",
+            `${errorText(error)} 次回起動時に保存済み範囲の回復を試みます。`);
+        } finally {
+          recording = false;
+          starting = false;
+          stopping = false;
+          clearInterval(chunkTimer);
+          clearInterval(heartbeatTimer);
+          await releaseWakeLock();
+          if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+          }
+          ready.microphone = false;
+          activeSession = null;
+          recorder = null;
+          recorderStopPromise = null;
+          recorderStopResolve = null;
+          updateControls();
+        }
+      }
+
+      function fullLabel(key) {
+        const [year, monthNumber, day] = key.split("-").map(Number);
+        return `${year}年${monthNumber}月${day}日`;
+      }
+
+      function periodLabel(first, last) {
+        return first === last
+          ? fullLabel(first)
+          : `${fullLabel(first)}〜${fullLabel(last)}`;
+      }
+
+      function bounds() {
+        return mode === "single"
+          ? [selected, selected]
+          : [rangeStart, rangeEnd];
+      }
+
+      function visibleRecords() {
+        const [first, last] = bounds();
+        if (!first || !last) return [];
+        return records
+          .filter(session => {
+            const key = sessionDate(session);
+            return key >= first && key <= last;
+          })
+          .sort((a, b) =>
+            a.recording.startEpochMs - b.recording.startEpochMs);
+      }
+
+      async function refreshRecords() {
+        if (!db) return;
+        const all = await getSessions();
+        records = all.filter(session =>
+          (session.state === "completed" || session.state === "recovered")
+          && session.calendarSaved
+          && session.recording
+          && Number.isFinite(session.recording.startEpochMs));
+        render();
+
+        if (!currentSession) {
+          const latest = all
+            .filter(session =>
+              (session.state === "completed" || session.state === "recovered")
+              && session.recording
+              && Number.isFinite(session.recording.startEpochMs))
+            .sort((a, b) =>
+              b.recording.startEpochMs - a.recording.startEpochMs)[0];
+          renderSummary(latest || null);
+        }
+      }
+
+      function chooseDate(key) {
+        if (mode === "single") {
+          selected = key;
+        } else if (!rangeStart || rangeEnd) {
+          rangeStart = key;
+          rangeEnd = null;
+        } else {
+          rangeEnd = key;
+          if (rangeEnd < rangeStart) {
+            [rangeStart, rangeEnd] = [rangeEnd, rangeStart];
+          }
+        }
+        render();
+        const button = Array.from(el("days").children)
+          .find(node => node.dataset && node.dataset.date === key);
+        if (button) button.focus();
+      }
+
+      function renderCalendar() {
+        const year = month.getFullYear();
+        const monthIndex = month.getMonth();
+        el("month-title").textContent = `${year}年${monthIndex + 1}月`;
+        el("single-mode").classList.toggle("active", mode === "single");
+        el("range-mode").classList.toggle("active", mode === "range");
+        el("single-mode").setAttribute(
+          "aria-pressed", String(mode === "single"));
+        el("range-mode").setAttribute(
+          "aria-pressed", String(mode === "range"));
+        el("selection-hint").textContent = mode === "single"
+          ? "確認したい日付を選んでください。"
+          : !rangeStart
+            ? "① 開始日を選んでください。"
+            : !rangeEnd
+              ? "② 終了日を選んでください。"
+              : "期間を選択しました。別の日付を押すと選び直せます。";
+        el("range-tools").hidden = mode !== "range";
+        el("range-label").textContent = !rangeStart
+          ? "期間未選択"
+          : !rangeEnd
+            ? `開始日：${fullLabel(rangeStart)}`
+            : periodLabel(rangeStart, rangeEnd);
+
+        const grid = el("days");
+        grid.replaceChildren();
+        const firstWeekday = new Date(year, monthIndex, 1).getDay();
+        for (let i = 0; i < firstWeekday; i++) {
+          const blank = document.createElement("span");
+          blank.setAttribute("aria-hidden", "true");
+          grid.append(blank);
+        }
+        const count = new Date(year, monthIndex + 1, 0).getDate();
+        for (let day = 1; day <= count; day++) {
+          const key = dateKey(year, monthIndex, day);
+          const weekday = new Date(year, monthIndex, day).getDay();
+          const hasData = records.some(session => sessionDate(session) === key);
+          const edge = mode === "single"
+            ? key === selected
+            : key === rangeStart || key === rangeEnd;
+          const inside = Boolean(mode === "range" && rangeStart && rangeEnd
+            && key >= rangeStart && key <= rangeEnd);
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = "day"
+            + (weekday === 0 ? " sun" : weekday === 6 ? " sat" : "")
+            + (key === todayKey() ? " today" : "")
+            + (inside ? " in-range" : "")
+            + (edge ? " selected" : "");
+          button.dataset.date = key;
+          button.setAttribute("aria-pressed", String(edge || inside));
+          button.setAttribute("aria-label",
+            `${fullLabel(key)}、保存記録${hasData ? "あり" : "なし"}`
+            + (key === todayKey() ? "、今日" : ""));
+          const number = document.createElement("span");
+          number.textContent = String(day);
+          const dot = document.createElement("span");
+          dot.className = "dot" + (hasData ? "" : " empty");
+          dot.setAttribute("aria-hidden", "true");
+          button.append(number, dot);
+          button.addEventListener("click", () => chooseDate(key));
+          grid.append(button);
+        }
+      }
+
+      function renderRecords() {
+        const [first, last] = bounds();
+        const matched = visibleRecords();
+        const complete = Boolean(first && last);
+        const list = el("record-list");
+        list.replaceChildren();
+        el("selected-heading").textContent = complete
+          ? `${periodLabel(first, last)}の記録（${matched.length}件）`
+          : "表示する期間を選択してください";
+        el("share-button").disabled = !complete || !matched.length;
+
+        if (!complete || !matched.length) {
+          const empty = document.createElement("div");
+          empty.className = "empty-state";
+          empty.textContent = complete
+            ? "保存記録はありません。"
+            : "カレンダーで開始日と終了日を選んでください。";
+          list.append(empty);
+          return;
+        }
+
+        matched.forEach(session => {
+          const card = document.createElement("article");
+          card.className = "card";
+          card.dataset.recordId = session.sessionId;
+
+          const saved = document.createElement("span");
+          saved.className = "saved";
+          saved.dataset.role = "saved-status";
+          saved.textContent = session.state === "recovered"
+            ? "✓ 保存済み／中断回復データ"
+            : "✓ カレンダーに保存済み";
+
+          const time = document.createElement("p");
+          time.className = "card-time";
+          time.dataset.role = "record-range";
+          time.textContent = rangeText(session);
+
+          const duration = document.createElement("div");
+          duration.className = "duration";
+          const label = document.createElement("span");
+          label.className = "label";
+          label.textContent = "記録時間";
+          const value = document.createElement("span");
+          value.className = "value";
+          value.dataset.role = "record-duration";
+          setDuration(value, session.recording.totalDurationMs);
+          duration.append(label, value);
+
+          const figure = document.createElement("figure");
+          figure.className = "timeline";
+          const header = document.createElement("div");
+          header.className = "timeline-header";
+          const caption = document.createElement("figcaption");
+          caption.className = "timeline-title";
+          caption.textContent = "記録タイムライン";
+          const phase = document.createElement("span");
+          phase.className = "sample";
+          phase.textContent = "Phase 3未実装";
+          header.append(caption, phase);
+
+          const chart = document.createElement("div");
+          chart.className = "chart";
+          chart.dataset.role = "timeline-chart";
+          chart.textContent =
+            "実測波形・音／体動の検出時間は未取得。サンプル値は表示しません。";
+
+          const endpoints = document.createElement("div");
+          endpoints.className = "endpoints";
+          for (const [title, timestamp] of [
+            ["記録開始", session.recording.startEpochMs],
+            ["記録停止", session.recording.endEpochMs]
+          ]) {
+            const item = document.createElement("div");
+            item.append(document.createTextNode(title));
+            const strong = document.createElement("strong");
+            strong.textContent = datetime(timestamp);
+            item.append(strong);
+            endpoints.append(item);
+          }
+          figure.append(header, chart, endpoints);
+
+          const note = document.createElement("p");
+          note.className = "note";
+          note.textContent =
+            `音声：${session.audioChunkCount}チャンク／`
+            + `${(session.audioBytes / 1048576).toFixed(2)} MiB。`
+            + "チャンクの単独再生・エクスポート互換性は未検証。";
+          card.append(saved, time, duration, figure, note);
+          list.append(card);
+        });
+      }
+
+      function render() {
+        renderCalendar();
+        renderRecords();
+      }
+
+      function openCalendar(from) {
+        calendarReturnScreen = from;
+        el("calendar-back").textContent = from === "capture-screen"
+          ? "記録画面に戻る" : "記録終了画面に戻る";
+        render();
+        showScreen("calendar-screen");
+      }
+
+      function openShare() {
+        const [first, last] = bounds();
+        const matched = visibleRecords();
+        if (!first || !last || !matched.length) return;
+        el("zip-period").textContent = periodLabel(first, last);
+        el("zip-count").textContent = `対象：${matched.length}件の睡眠記録`;
+        el("zip-name").textContent =
+          `SomnoLog_${first}${first === last ? "" : `_${last}`}.zip`;
+        el("share-status").textContent =
+          "ZIP生成はPhase 4で実装します。今回はファイルを生成しません。";
+        el("share-dialog").showModal();
+      }
+
+      function updateClock() {
+        const d = new Date();
+        const text = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+        el("black-clock").textContent = text;
+        el("black-clock").dateTime = text;
+      }
+
+      function setClockState(state) {
+        el("black-screen").dataset.clockState = state;
+        el("black-back").disabled = state === "off";
+        el("black-screen").setAttribute("aria-label", state === "off"
+          ? "黒画面。タップまたはEnterで時計と戻るボタンを表示"
+          : "時計表示。タップで明るく表示。戻るボタンで記録画面に復帰");
+        if (state === "off" && document.activeElement === el("black-back")) {
+          el("black-screen").focus();
+        }
+      }
+
+      function wakeClock() {
+        updateClock();
+        setClockState("bright");
+        clearTimeout(clockHideTimer);
+        clockHideTimer = setTimeout(() => setClockState("off"), 3000);
+      }
+
+      function leaveBlackScreen() {
+        clearTimeout(clockHideTimer);
+        el("black-screen").hidden = true;
+        document.body.style.overflow = "";
+        el("black-button").focus();
+      }
+
+      function cacheBusted(url) {
+        const target = new URL(url, location.href);
+        target.searchParams.set("_somnolog_cb",
+          `${Date.now()}-${sessionSuffix()}`);
+        return target.href;
+      }
+
+      async function fetchFresh(url, json = false) {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 20000);
+        try {
+          const response = await fetch(cacheBusted(url), {
+            cache: "no-store",
+            credentials: "omit",
+            redirect: "follow",
+            signal: controller.signal,
+            headers: {
+              Accept: json ? "application/vnd.github+json" : "text/html"
+            }
+          });
+          if (!response.ok) {
+            throw new Error(`更新取得失敗：HTTP ${response.status}`);
+          }
+          return json ? await response.json() : await response.text();
+        } finally {
+          clearTimeout(timer);
+        }
+      }
+
+      async function disposeForUpdate() {
+        if (recording || starting || stopping || pendingChunks) {
+          throw new Error("録音・保存処理中は更新できません。");
+        }
+        disposed = true;
+        clearInterval(leaseTimer);
+        clearInterval(clockTimer);
+        clearInterval(chunkTimer);
+        clearInterval(heartbeatTimer);
+        clearTimeout(retryTimer);
+        clearTimeout(clockHideTimer);
+        if (motionListenerInstalled) {
+          window.removeEventListener("devicemotion", onMotion);
+        }
+        if (stream) {
+          stream.getTracks().forEach(track => track.stop());
+          stream = null;
+        }
+        await releaseWakeLock();
+        if (audioContext && audioContext.state !== "closed") {
+          try { await audioContext.close(); } catch (_) {}
+        }
+        try { await releaseLease(); } catch (_) {}
+        ownsRuntime = false;
+        if (releasingRuntime) {
+          releasingRuntime();
+          releasingRuntime = null;
+        }
+        if (db) {
+          db.close();
+          db = null;
+        }
+      }
+
+      async function applyLatestGitHub() {
+        if (recording || starting || stopping || pendingChunks || updating) {
+          showMessage("更新できません",
+            "録音または保存処理が終わってから更新してください。");
+          return;
+        }
+        updating = true;
+        updateControls();
+        try {
+          if (location.protocol !== "https:") {
+            throw new Error("動的更新はHTTPS上で実行してください。");
+          }
+          // 配置先リポジトリのデフォルトブランチを取得する。
+          const repository = await fetchFresh(
+            `https://api.github.com/repos/${REPOSITORY}`, true);
+          const branch = repository.default_branch || REPOSITORY_BRANCH;
+          const commit = await fetchFresh(
+            `https://api.github.com/repos/${REPOSITORY}/commits/`
+            + encodeURIComponent(branch), true);
+          const sha = commit.sha;
+          if (typeof sha !== "string" || !/^[a-f0-9]{40}$/i.test(sha)) {
+            throw new Error("GitHubのコミットSHAを確認できません。");
+          }
+          const latestHtml = await fetchFresh(
+            `https://raw.githubusercontent.com/${REPOSITORY}/${sha}/`
+            + REPOSITORY_FILE);
+
+          const parsed = new DOMParser()
+            .parseFromString(latestHtml, "text/html");
+          const scripts = Array.from(parsed.querySelectorAll("script"));
+          if (scripts.length !== 1 || scripts[0].src
+              || !scripts[0].textContent.includes(BUILD_MARKER)) {
+            throw new Error(
+              "更新先は今回の正本実装と互換性がありません。旧版または別構成のため適用しません。");
+          }
+          if (frozenShell(parsed) !== expectedShell) {
+            throw new Error(
+              "更新先のHTML・CSSが正本と異なります。UIフリーズを守るため適用しません。");
+          }
+          if (parsed.querySelector(
+            "iframe,object,embed,link[rel='stylesheet'],meta[http-equiv='refresh']")) {
+            throw new Error("更新HTMLに未許可の外部依存があります。");
+          }
+
+          const versionMatch = scripts[0].textContent.match(
+            /\bconst\s+APP_VERSION\s*=\s*["']([^"']+)["']/);
+          const targetVersion = versionMatch ? versionMatch[1] : "不明";
+          const unchanged =
+            scripts[0].textContent === document.querySelector("script").textContent;
+          if (unchanged) {
+            showMessage("最新版を確認",
+              `${APP_VERSION} は最新コミット ${sha.slice(0, 12)} と同じコードです。`);
+            return;
+          }
+          if (!window.confirm(
+            `GitHub最新コミット ${sha.slice(0, 12)} の`
+            + ` ${targetVersion} を適用しますか？\n`
+            + "記録データはIndexedDBに残します。")) {
+            return;
+          }
+          const restoredUrl = new URL(location.href);
+          restoredUrl.searchParams.set("_somnolog_commit", sha);
+          restoredUrl.searchParams.set("_somnolog_cb", String(Date.now()));
+          history.replaceState(null, "", restoredUrl.href);
+          await disposeForUpdate();
+          // 同じHTTPSオリジンの文書を差し替えるため、IndexedDBの所在は変えない。
+          // ここで実行するのは利用者が指定した公開リポジトリのコードのみ。
+          document.open();
+          document.write(latestHtml);
+          document.close();
+        } catch (error) {
+          if (disposed) {
+            window.alert(`${errorText(error)} ページを再読み込みしてください。`);
+          } else {
+            showMessage("更新を適用できません",
+              `${errorText(error)} 現在のコードを維持しました。`);
+          }
+        } finally {
+          updating = false;
+          if (!disposed) updateControls();
+        }
+      }
+
+      async function reloadWithoutCache() {
+        if (recording || starting || stopping || pendingChunks || updating) {
+          showMessage("再読み込みできません",
+            "録音・保存処理が終わってから操作してください。");
+          return;
+        }
+        updating = true;
+        updateControls();
+        try {
+          await disposeForUpdate();
+          location.replace(cacheBusted(location.href));
+        } catch (error) {
+          window.alert(errorText(error));
+        }
+      }
+
+      // 正本に更新ボタンを追加せず、既存見出しを更新操作の入口に使う。
+      el("capture-heading").title =
+        `${APP_VERSION}／タップでGitHub最新版取得またはキャッシュ回避再読み込み`;
+      el("capture-heading").addEventListener("click", () => {
+        if (recording || starting || stopping || updating) {
+          showMessage("更新できません", "記録終了後に操作してください。");
+          return;
+        }
+        if (window.confirm(
+          `${APP_VERSION}\nGitHubの最新コミットから最新版を取得しますか？`)) {
+          void applyLatestGitHub();
+        } else if (window.confirm(
+          "キャッシュを回避して公開ページを再読み込みしますか？")) {
+          void reloadWithoutCache();
+        }
+      });
+
+      el("microphone-permission").addEventListener("click", () => {
+        if (!ownsRuntime || recording || starting || updating) return;
+        let resumed;
+        try {
+          resumed = ensureAudioContextFromGesture();
+        } catch (error) {
+          showMessage("AudioContextを起動できません", errorText(error));
+          return;
+        }
+        void requestMicrophone(resumed);
+      });
+
+      el("motion-permission").addEventListener("click", () => {
+        if (!ownsRuntime || recording || starting || updating) return;
+        let permission;
+        try {
+          const eventType = window.DeviceMotionEvent;
+          permission = eventType && typeof eventType.requestPermission === "function"
+            ? eventType.requestPermission()
+            : Promise.resolve(eventType ? "granted" : "unavailable");
+        } catch (error) {
+          showMessage("モーション権限を取得できません", errorText(error));
+          return;
+        }
+        void requestMotion(permission);
+      });
+
+      el("start").addEventListener("click", () => {
+        let resumed;
+        try {
+          resumed = ensureAudioContextFromGesture();
+        } catch (error) {
+          showMessage("記録を開始できません", errorText(error));
+          return;
+        }
+        void beginRecording(resumed);
+      });
+
+      el("stop-button").addEventListener("click", () => {
+        void stopRecording();
+      });
+      el("history-button").addEventListener("click", () => {
+        if (!recording && !starting && !stopping) {
+          openCalendar("capture-screen");
+        }
+      });
+      el("capture-help-button").addEventListener("click", () => {
+        el("usage-dialog").showModal();
+      });
+      el("black-button").addEventListener("click", () => {
+        if (!recording || stopping) return;
+        updateClock();
+        el("black-screen").hidden = false;
+        document.body.style.overflow = "hidden";
+        setClockState("dim");
+        clearTimeout(clockHideTimer);
+        el("black-screen").focus();
+      });
+      el("black-screen").addEventListener("click", event => {
+        if (event.target.closest("#black-back")) return;
+        wakeClock();
+      });
+      el("black-screen").addEventListener("keydown", event => {
+        if (event.target !== el("black-screen")) return;
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          wakeClock();
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          leaveBlackScreen();
+        }
+      });
+      el("black-back").addEventListener("click", event => {
+        event.stopPropagation();
+        leaveBlackScreen();
+      });
+      clockTimer = setInterval(() => {
+        if (!el("black-screen").hidden) updateClock();
+      }, 1000);
+
+      el("record-back").addEventListener("click", () =>
+        showScreen("capture-screen"));
+      el("calendar-button").addEventListener("click", () =>
+        openCalendar("record-screen"));
+      el("calendar-back").addEventListener("click", () =>
+        showScreen(calendarReturnScreen));
+      el("save-button").addEventListener("click", () => {
+        if (!currentSession) return;
+        el("save-dialog").showModal();
+      });
+      el("save-calendar").addEventListener("click", async () => {
+        if (!currentSession || !db) return;
+        el("save-calendar").disabled = true;
+        try {
+          const stored = await getRecord("sessions", currentSession.sessionId);
+          if (!stored) throw new Error("対象セッションが見つかりません。");
+          stored.calendarSaved = true;
+          await putSession(stored);
+          renderSummary(stored);
+          selected = sessionDate(stored);
+          const date = new Date(stored.recording.startEpochMs);
+          month = new Date(date.getFullYear(), date.getMonth(), 1);
+          mode = "single";
+          await refreshRecords();
+          openCalendar("record-screen");
+          showMessage("カレンダーに保存",
+            "セッションと録音チャンクを端末内のIndexedDBへ保存しました。"
+            + "ブラウザデータの削除やストレージの退避・消去で失われる可能性があります。");
+        } catch (error) {
+          showMessage("カレンダー登録に失敗", errorText(error));
+        } finally {
+          el("save-calendar").disabled = false;
+        }
+      });
+      el("share-current").addEventListener("click", () => {
+        showMessage("音声付きデータの共有は未実装",
+          "Phase 4でzip-store-v1の生成を実装します。"
+          + "この版では共有用ファイルを作成しません。");
+      });
+      el("single-mode").addEventListener("click", () => {
+        mode = "single";
+        render();
+      });
+      el("range-mode").addEventListener("click", () => {
+        mode = "range";
+        render();
+      });
+      el("reset-range").addEventListener("click", () => {
+        rangeStart = null;
+        rangeEnd = null;
+        render();
+      });
+      el("prev-month").addEventListener("click", () => {
+        month = new Date(month.getFullYear(), month.getMonth() - 1, 1);
+        renderCalendar();
+      });
+      el("next-month").addEventListener("click", () => {
+        month = new Date(month.getFullYear(), month.getMonth() + 1, 1);
+        renderCalendar();
+      });
+      el("share-button").addEventListener("click", openShare);
+      el("zip-save").addEventListener("click", () => {
+        el("share-status").textContent =
+          "Phase 4未実装。ZIPファイルは作成していません。";
+      });
+      el("clinic-button").addEventListener("click", () => {
+        el("share-status").textContent =
+          "窓口連携は未実装です。患者IDや状態は変更していません。";
+      });
+      document.querySelectorAll("[data-help]").forEach(button => {
+        button.addEventListener("click", () => {
+          showMessage("記録・履歴の使い方",
+            "開始時にマイクとモーションを許可し、記録開始を押します。"
+            + "停止後、保存・共有からカレンダーに登録できます。"
+            + "Phase 2では音声保存と中断回復を検証します。"
+            + "検出時間・実測メーター・波形はPhase 3、ZIPはPhase 4です。"
+            + "更新は開始画面のSomnoLog見出しをタップしてください。");
+        });
+      });
+
+      function onVisibilityChange() {
+        if (document.visibilityState === "visible") {
+          if (recording) void acquireWakeLock();
+          if (!ownsRuntime && !disposed && db) {
+            acquireRuntime().catch(error =>
+              showMessage("使用権の取得失敗", errorText(error)));
+          }
+        } else if (recording && recorder && recorder.state === "recording") {
+          try { recorder.requestData(); }
+          catch (error) { emergencyStop(error); }
+        }
+      }
+      document.addEventListener("visibilitychange", onVisibilityChange);
+
+      window.addEventListener("beforeunload", event => {
+        if (recording || starting || stopping || pendingChunks) {
+          event.preventDefault();
+          event.returnValue = "";
+        }
+      });
+      window.addEventListener("pagehide", () => {
+        // ページ終了時の非同期保存は保証しない。
+        // 正常終了の印を付けず、次回起動時に保存済み範囲を回復する。
+        clearInterval(leaseTimer);
+        clearTimeout(retryTimer);
+        if (recording && recorder && recorder.state === "recording") {
+          try { recorder.requestData(); } catch (_) {}
+        }
+      });
+      window.addEventListener("pageshow", event => {
+        if (!event.persisted || disposed) return;
+        if (ownsRuntime) {
+          clearInterval(leaseTimer);
+          leaseTimer = setInterval(renewLease, 3000);
+          void renewLease();
+        } else if (db) {
+          acquireRuntime().catch(error =>
+            showMessage("復帰時の初期化失敗", errorText(error)));
+        }
+      });
+
+      async function initialize() {
+        // 正本内の固定サンプル文言は、既存DOMの内容だけ更新する。
+        const calendarNote = el("calendar-screen")
+          .querySelector("section[aria-labelledby='selected-heading'] > p.note");
+        if (calendarNote) {
+          calendarNote.textContent =
+            "※端末内に保存した実記録を表示します。波形はPhase 3未実装。"
+            + "記録開始時刻は実際の入眠時刻を示すものではありません。";
+        }
+        el("share-dialog").querySelector("p.note").textContent =
+          "※この版ではZIP作成・保存・送信を行いません。Phase 4で実装します。";
+        el("share-dialog").querySelector("ul").replaceChildren();
+        for (const text of [
+          "manifest.json：記録条件とファイル参照",
+          "log.json：時系列ログ（Phase 3で取得）",
+          "README.txt：記録条件の概要",
+          "audio/：録音データ",
+          "複数記録はsessions/配下に分割（Phase 4で実装）"
+        ]) {
+          const item = document.createElement("li");
+          item.textContent = text;
+          el("share-dialog").querySelector("ul").append(item);
+        }
+        renderSummary(null);
+        render();
+        updateControls();
+
+        try {
+          if (!window.isSecureContext) {
+            throw new Error("HTTPSで配信してSafariまたはChromeから開いてください。");
+          }
+          if (!window.indexedDB) {
+            throw new Error("IndexedDBが利用できません。");
+          }
+          db = await openDatabase();
+          await acquireRuntime();
+          await refreshRecords();
+          updateControls();
+          if (!ownsRuntime) {
+            showMessage("別タブで使用中",
+              "他のSomnoLogタブを閉じてください。使用権取得後に記録操作が有効になります。");
+          }
+          console.info("SomnoLog initialized", {
+            appVersion: APP_VERSION,
+            buildMarker: BUILD_MARKER,
+            phase: 2,
+            ownsRuntime
+          });
+        } catch (error) {
+          updateControls();
+          showMessage("初期化できません", errorText(error));
+        }
+      }
+
+      void initialize();
+    })();
     </script>
   </body>
   </html>
-
-      
