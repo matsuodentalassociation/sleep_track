@@ -129,6 +129,12 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
         </svg>
       </div>
       <button id="microphone-permission" class="permission" type="button" data-permission="microphone">マイクを許可</button>
+        <div style="margin-top:16px">
+          <label for="recording-gain" style="display:block;color:#d1d7de;font-size:14px">音量調整 <output id="recording-gain-value">0dB</output></label>
+          <input id="recording-gain" type="range" min="-9" max="9" step="1" value="0" style="width:100%;margin:12px 0;accent-color:#84b9cf">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#aebbc9"><span>−9 小さく</span><span>0</span><span>＋9 大きく</span></div>
+          <p style="font-size:11px;color:#aebbc9;line-height:1.7;margin-bottom:0">再生音量とグラフを調整します。生音のdB値は変更しません。記録中は固定です。</p>
+        </div>
     </div>
     <div class="signal">
       <div class="label">体動</div>
@@ -234,8 +240,8 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
   <ol>
     <li><strong>スマホを置く</strong><br>落ちたりずれたりしない安定した場所に置いてください。</li>
     <li><strong>電源につなぐ</strong><br>枕や布団の下には入れず、ケーブルが体に絡まないようにしてください。</li>
-    <li><strong>権限と録音ゲイン</strong><br>マイクを許可してください。許可後の同じボタンで録音倍率を変更できます。iPhone/iPadの初期候補は3倍、その他は1倍です。記録中は固定します。体動非対応でも音声記録できます。</li>
-    <li><strong>メーターを見る</strong><br>補正後入力を表示専用8倍で描画します。表示倍率は録音音声に加算されません。ピーク警告時は録音倍率を下げてください。</li>
+    <li><strong>権限と録音ゲイン</strong><br>マイクを許可し、音量調整を−9〜＋9dBで設定してください。小さい音は＋側、大きすぎる音は−側です。記録中は固定します。体動非対応でも音声記録できます。</li>
+    <li><strong>メーターを見る</strong><br>調整後の音の振れ幅を表示します。生音のdB値は調整前のまま保存します。ピーク警告時は音量調整を下げてください。</li>
     <li><strong>記録する</strong><br>最初の10秒は静かにしてください。増幅前入力で較正・音検出し、補正後音声を保存します。ページを前面に保ってください。</li>
     <li><strong>黒画面と更新</strong><br>単タップで時計を3秒表示、1.5秒長押しで復帰します。キーボードはEnterまたはSpaceを1.5秒押します。見出しをダブルクリックするとGitHub更新元を設定できます。</li>
   </ol>
@@ -272,7 +278,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
   <p><strong>ZIPにまとめるデータ</strong></p>
   <ul>
     <li>日時・要求設定・端末報告値・適用ゲイン</li>
-    <li>時系列正本（log.json）、30秒統計、音検出区間</li>
+    <li>生音dB・日時付きログ（log.json）、イベント時刻（events.json）、30秒統計、音検出区間</li>
     <li>補正後音声チャンク</li>
   </ul>
   <p class="warning">音声チャンクは連続録音の断片です。独立再生できるとは限りません。オフセットは配送時刻の推定で、SomnoGraph同期再生は未検証です。</p>
@@ -301,7 +307,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
   const lifecycle=new AbortController();
   const on=(target,type,fn)=>target.addEventListener(type,fn,{signal:lifecycle.signal});
   const E=id=>document.getElementById(id);
-  const BUILD='v20261009-02';
+  const BUILD='v20261010-01';
   const UK='SomnoLog.githubUpdate';
   const pad=n=>String(n).padStart(2,'0');
   const key=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
@@ -312,11 +318,21 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
   const ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||
     (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
 
-  let gainValue=ios?3:1;
-  try{
-    const n=Number(localStorage.getItem('SomnoLog.gain'));
-    if(n>=1&&n<=9)gainValue=n;
-  }catch(e){}
+  
+let gainDb=0;
+try{
+  const stored=localStorage.getItem('SomnoLog.gainDb');
+  const old=localStorage.getItem('SomnoLog.gain');
+  const n=stored!==null?Number(stored):
+    old!==null&&Number(old)>0?20*Math.log10(Number(old)):0;
+  if(Number.isFinite(n))gainDb=Math.max(-9,Math.min(9,Math.round(n)));
+}catch(e){}
+let gainValue=Math.pow(10,gainDb/20);
+const signedDb=n=>(n>0?'+':'')+Number(n).toFixed(0)+'dB';
+const sessionGainDb=s=>Number.isFinite(s.audioProcessing?.appliedGainDb)
+  ?s.audioProcessing.appliedGainDb
+  :20*Math.log10(s.audioProcessing?.appliedGain||1);
+  
 
   let db,ctx,stream,source,gainNode,destination,outMeter,processor,silent,recorder;
   let active=false,busy=false,exporting=false,session=null,current=null,history=[];
@@ -333,7 +349,25 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
   const warnings=new Set();
   const labels=document.querySelectorAll('#capture-screen .signal .label');
 
-  function status(raw=null,peak=null){
+  
+function updateGain(){
+  E('recording-gain').value=gainDb;
+  E('recording-gain-value').textContent=signedDb(gainDb);
+}
+E('recording-gain').oninput=()=>{
+  if(active||busy||updating)return;
+  gainDb=Number(E('recording-gain').value);
+  gainValue=Math.pow(10,gainDb/20);
+  if(gainNode&&ctx)gainNode.gain.setValueAtTime(gainValue,ctx.currentTime);
+  try{localStorage.setItem('SomnoLog.gainDb',String(gainDb));}catch(e){}
+  warnings.delete('補正後ピーク危険。音量調整を下げてください。');
+  warnings.delete('補正後ピーク危険。停止して音量調整を下げてください。');
+  updateGain();
+  status();
+};
+updateGain();
+
+function status(raw=null,peak=null){
     labels[0].textContent=
       (active
         ?`マイク 音検出 ${session.soundDetectedMs.toFixed(0)}ms / ${
@@ -342,8 +376,8 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
             :'基準 '+session.baselineDbFS.toFixed(1)+'dBFS'
         }`
         :'マイク')+
-      ` / 録音${gainValue}倍・表示8倍`+
-      (raw===null?'':` / 入力 ${raw.toFixed(1)}dBFS`)+
+      ` / 音量調整 ${signedDb(gainDb)}・表示8倍`+
+      (raw===null?'':` / 生音 ${raw.toFixed(1)}dB`)+
       (peak===null?'':` / 補正ピーク ${
         (20*Math.log10(Math.max(peak,1e-6))).toFixed(1)
       }dBFS`)+
@@ -371,6 +405,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
     E('black-button').disabled=!active||busy;
     E('history-button').disabled=active||busy||updating;
     E('microphone-permission').disabled=active||busy||updating;
+    E('recording-gain').disabled=active||busy||updating;
   }
 
   function closeDialogs(){
@@ -412,12 +447,78 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
     });
   }
 
-  async function put(store,value){
-    const t=db.transaction(store,'readwrite');
-    const p=done(t);
-    t.objectStore(store).put(value);
-    await p;
+  
+function getPath(value,path){
+  return path.split('.').reduce((v,k)=>v==null?undefined:v[k],value);
+}
+function setPath(value,path,key){
+  const parts=path.split('.');
+  let target=value;
+  for(let i=0;i<parts.length-1;i++){
+    if(!target[parts[i]]||typeof target[parts[i]]!=='object')target[parts[i]]={};
+    target=target[parts[i]];
   }
+  target[parts[parts.length-1]]=key;
+}
+function storageWrite(store,value){
+  // Preserve existing keys; fill only keys missing in the installed DB schema.
+  const kp=store.keyPath;
+  if(kp===null){
+    const key=value.storageKey||(value.storageKey=
+      store.name==='sessions'?value.sessionId:uid());
+    return store.put(value,key);
+  }
+  const paths=Array.isArray(kp)?kp:[kp];
+  for(const path of paths){
+    if(!path)throw Error('保存先 '+store.name+' の主キー形式に対応できません');
+    if(getPath(value,path)===undefined&&!store.autoIncrement){
+      const generated=store.name==='sessions'?value.sessionId:uid();
+      if(generated===undefined)throw Error('保存先 '+store.name+' の主キーがありません');
+      setPath(value,path,generated);
+    }
+  }
+  try{return store.put(value);}
+  catch(e){throw Error('保存先 '+store.name+': '+e.message);}
+}
+async function put(store,value){
+  const t=db.transaction(store,'readwrite');
+  const p=done(t);
+  try{
+    storageWrite(t.objectStore(store),value);
+  }catch(e){
+    try{t.abort();}catch(x){}
+    await p.catch(()=>{});
+    throw e;
+  }
+  await p;
+}
+async function storageCheck(){
+  const names=['sessions','sessionLogs','profileBins','clips','audioChunks'];
+  const t=db.transaction(names,'readwrite');
+  const completed=done(t);
+  const sid='storage-check-'+uid();
+  try{
+    await Promise.all(names.map(name=>new Promise((ok,no)=>{
+      const store=t.objectStore(name);
+      const value=name==='sessions'
+        ?{sessionId:sid,status:'storage_check'}
+        :{sessionId:sid,clipId:uid(),blob:new Blob(['test']),offsetMs:0,index:0,sequence:0};
+      const r=storageWrite(store,value);
+      r.onerror=()=>no(Error('保存チェック '+name+': '+r.error?.message));
+      r.onsuccess=()=>{
+        const d=store.delete(r.result);
+        d.onerror=()=>no(d.error);
+        d.onsuccess=()=>ok();
+      };
+    })));
+    await completed;
+  }catch(e){
+    try{t.abort();}catch(x){}
+    await completed.catch(()=>{});
+    throw e;
+  }
+}
+  
 
   function save(fn){
     pending++;
@@ -485,31 +586,14 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
   }
 
   E('microphone-permission').onclick=()=>{
-    if(stream){
-      const answer=prompt(
-        '録音倍率を1〜9で指定（記録中は固定）。音割れ時は下げてください。',
-        String(gainValue)
-      );
-      if(answer===null)return;
+    
+  if(stream){
+    E('recording-gain').focus();
+    return;
+  }
+  
 
-      const n=Number(answer);
-      if(!Number.isFinite(n)||n<1||n>9){
-        warn('倍率は1〜9です。');
-        return;
-      }
-
-      gainValue=n;
-      gainNode.gain.setValueAtTime(n,ctx.currentTime);
-      try{
-        localStorage.setItem('SomnoLog.gain',String(n));
-      }catch(e){}
-
-      E('microphone-permission').textContent=`録音ゲイン ${n}倍（変更）`;
-      status();
-      return;
-    }
-
-    let p;
+  let p;
     try{
       p=resume();
       p.catch(error);
@@ -564,7 +648,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
       };
 
       E('microphone-permission').textContent=
-        `録音ゲイン ${gainValue}倍（変更）`;
+        `マイク許可済み（音量は下のスライダー）`;
       meter();
     }).catch(e=>{
       if(stream){
@@ -624,7 +708,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
 
     if(!active&&++meterFrame%20===0){
       if(peak>=.95){
-        warnings.add('補正後ピーク危険。録音倍率を下げてください。');
+        warnings.add('補正後ピーク危険。音量調整を下げてください。');
       }
       status(
         20*Math.log10(
@@ -757,6 +841,14 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
     const s=session;
     row.sessionId=s.sessionId;
     row.timestamp=new Date(s.startTimeMs+row.offsetMs).toISOString();
+  row.sourceDbFS=row.soundDbFS;
+  row.adjustedDbFS=row.soundDbFS===null?null:row.soundDbFS+sessionGainDb(s);
+  row.appliedGainDb=sessionGainDb(s);
+  row.audioTimeMs=row.offsetMs;
+  row.eventTypes=[
+    ...(row.soundDetected===true?['sound']:[]),
+    ...(row.motionDetected===true?['motion']:[])
+  ];
 
     if(row.soundDetected===true)s.soundDetectedMs+=row.durationMs;
     if(row.motionDetected===true)s.motionDetectedMs+=row.durationMs;
@@ -770,10 +862,16 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
         clip={
           clipId:uid(),
           sessionId:s.sessionId,
-          startOffsetMs:row.offsetMs
-        };
+          startOffsetMs:row.offsetMs,
+        startTime:row.timestamp,
+        sourceDbFSAtStart:row.soundDbFS,
+        sourcePeakDbFS:row.soundDbFS,
+        audioTimeMs:row.offsetMs
+      };
       }
       clip.endOffsetMs=row.offsetMs+row.durationMs;
+    clip.endTime=new Date(s.startTimeMs+clip.endOffsetMs).toISOString();
+    clip.sourcePeakDbFS=Math.max(clip.sourcePeakDbFS??-120,row.soundDbFS??-120);
     }else{
       flushClip();
     }
@@ -814,8 +912,14 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
     save(async()=>{
       const t=db.transaction(['sessions','sessionLogs'],'readwrite');
       const p=done(t);
-      t.objectStore('sessionLogs').put(row);
-      t.objectStore('sessions').put(snapshot);
+      try{
+      storageWrite(t.objectStore('sessionLogs'),row);
+      storageWrite(t.objectStore('sessions'),snapshot);
+    }catch(e){
+      try{t.abort();}catch(x){}
+      await p.catch(()=>{});
+      throw e;
+    }
       await p;
     });
   }
@@ -866,7 +970,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
     let soundDetected=null;
     let soundStatus=raw===null?'missing':'ok';
 
-    if(raw!==null&&start<10000){
+    if(raw!==null&&(start<10000||baseline.length<80)){
       baseline.push(raw);
       soundStatus='measuring_baseline';
     }else if(raw!==null){
@@ -875,8 +979,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
         const n=values.length;
 
         if(n<80){
-          warn('較正音声が不足。停止して再試行してください。');
-          stop().catch(error);
+          warn('環境音の基準を取得中です。計測は継続します。');
           return;
         }
 
@@ -910,7 +1013,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
 
       if(data.peak*gainValue>=.95){
         session.clippingRiskWindows++;
-        warnings.add('補正後ピーク危険。停止して録音倍率を下げてください。');
+        warnings.add('補正後ピーク危険。停止して音量調整を下げてください。');
       }
     }
 
@@ -988,6 +1091,8 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
     busy=true;
     controls();
     await resumed;
+    await queue;
+    await storageCheck();
 
     if(!window.MediaRecorder||!ctx.audioWorklet){
       throw Error('MediaRecorder / AudioWorklet非対応');
@@ -1059,8 +1164,12 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
       },
       audioProcessing:{
         appliedGain:gainValue,
-        gainTimeline:[{startOffsetMs:0,gain:gainValue}],
+        appliedGainDb:gainDb,
+        gainTimeline:[{startOffsetMs:0,gain:gainValue,gainDb}],
         logDomain:'pre_gain',
+        graphDomain:'post_gain_amplitude',
+        sourceLevelUnit:'dBFS',
+        sourceLevelLabel:'生音 dB',
         recordedAudioDomain:'post_gain',
         displayGain:8,
         deviceHint:ios?'iOS/iPadOS candidate':'other',
@@ -1099,7 +1208,9 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
         blob:e.data,
         mimeType:e.data.type||rec.mimeType,
         startOffsetMs:start,
-        durationMs:Math.max(0,end-start),
+      startTime:new Date(target.startTimeMs+start).toISOString(),
+      endTime:new Date(target.startTimeMs+end).toISOString(),
+      durationMs:Math.max(0,end-start),
         offsetAccuracy:'delivery_time_estimate',
         independentlyDecodable:false
       };
@@ -1118,10 +1229,15 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
     processor.port.onmessage=e=>windowData(e.data);
 
     origin=performance.now();
-    source.connect(processor);
+  map=-ctx.currentTime*1000;
+  session.startTimeMs=Date.now();
+  session.startTime=new Date(session.startTimeMs).toISOString();
+  session.date=key(new Date(session.startTimeMs));
+  source.connect(processor);
     active=true;
     rec.start();
-    busy=false;
+  save(()=>put('sessions',JSON.parse(JSON.stringify(target))));
+  busy=false;
     controls();
     acquireWake();
 
@@ -1320,7 +1436,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
 
     E('save-range').textContent=E('result-range').textContent;
     E('result-time-detail').textContent=
-      `録音ゲイン ${s.audioProcessing?.appliedGain||1}倍 / `+
+      `音量調整 ${signedDb(sessionGainDb(s))} / `+
       `音量ログは増幅前 / ピーク危険窓 ${s.clippingRiskWindows||0}`;
 
     E('result-year').textContent=
@@ -1449,7 +1565,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
       const saved=document.createElement('span');
       saved.className='saved';
       saved.textContent=
-        `${s.status} / 録音${s.audioProcessing?.appliedGain||1}倍`;
+        `${s.status} / 音量調整 ${signedDb(sessionGainDb(s))}`;
 
       const p=document.createElement('p');
       p.className='card-time';
@@ -1475,7 +1591,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
       fig.innerHTML=
         '<div class="timeline-header">'+
         '<figcaption class="timeline-title">記録タイムライン</figcaption>'+
-        '<span class="sample">実測・増幅前</span></div>'+
+        '<span class="sample">振れ幅は音量調整後</span></div>'+
         '<div class="chart" data-role="timeline-chart"></div>'+
         '<div class="endpoints">'+
         '<div>記録開始<strong></strong></div>'+
@@ -1522,10 +1638,10 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
       };
 
       fig.querySelector('.chart').innerHTML=
-        `<svg viewBox="0 0 360 236" role="img" aria-label="増幅前音量dBFSと体動g。空白は欠測">
-          <text x="12" y="19" fill="#84b9cf" font-size="12">音量 dBFS（−120〜0）</text>
+        `<svg viewBox="0 0 360 236" role="img" aria-label="音量調整後の音の振れ幅と体動。生音の値はログに保持。空白は欠測">
+          <text x="12" y="19" fill="#84b9cf" font-size="12">音の振れ幅（調整 ${signedDb(sessionGainDb(s))}）</text>
           <text x="12" y="132" fill="#bfdbd1" font-size="12">体動 g（0〜0.5）</text>
-          <path d="${path('s',v=>105-Math.min(120,Math.max(0,v+120))*.6)}" fill="none" stroke="#84b9cf"/>
+          <path d="${path('s',v=>105-Math.min(72,Math.pow(10,(v+sessionGainDb(s))/20)*8*72))}" fill="none" stroke="#84b9cf"/>
           <path d="${path('m',v=>200-Math.min(.5,v)*120)}" fill="none" stroke="#bfdbd1"/>
           <text x="12" y="227" fill="#aebbc9" font-size="11">0分</text>
           <text x="348" y="227" text-anchor="end" fill="#aebbc9" font-size="11">${(total/60000).toFixed(2)}分</text>
@@ -1786,7 +1902,10 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
           sizeBytes:row.blob.size,
           startOffsetMs:row.startOffsetMs,
           durationMs:row.durationMs,
-          offsetAccuracy:'delivery_time_estimate',
+        startTime:row.startTime||new Date(s.startTimeMs+row.startOffsetMs).toISOString(),
+        endTime:row.endTime||new Date(s.startTimeMs+row.startOffsetMs+row.durationMs).toISOString(),
+        appliedGainDb:sessionGainDb(s),
+        offsetAccuracy:'delivery_time_estimate',
           independentlyDecodable:false
         });
       });
@@ -1819,6 +1938,17 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
           somnoGraphCompatibility:'unverified'
         },
         logFile:'log.json',
+      eventFile:'events.json',
+      timeLink:{
+        origin:s.startTime,
+        audioPositionField:'audioTimeMs',
+        logOffsetField:'offsetMs',
+        timestampField:'timestamp',
+        sourceLevelField:'sourceDbFS',
+        adjustedLevelField:'adjustedDbFS',
+        unit:'milliseconds',
+        accuracy:'approximate_100ms_windows_and_delivery_time'
+      },
         exportedAt:new Date().toISOString()
       };
 
@@ -1836,8 +1966,9 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
         `開始: ${s.startTime}\r\n`+
         `状態: ${s.status}\r\n`+
         `音検出: ${s.soundDetectedMs}ms / 体動: ${s.motionDetectedMs}ms\r\n`+
-        `録音ゲイン: ${s.audioProcessing?.appliedGain||1}倍\r\n`+
-        `音声は補正後、soundDbFSは増幅前です。二重補正しないでください。\r\n`+
+        `音量調整: ${signedDb(sessionGainDb(s))}\r\n`+
+        `音声とグラフの振れ幅は調整後、sourceDbFS/soundDbFSは生音の入力値です。\r\n`+
+        `events.jsonにイベント開始日時とaudioTimeMs（録音開始からのms）を保存します。\r\n`+
         `音声断片は独立再生できるとは限りません。sequence順に連結する必要があります。\r\n`+
         `オフセットは配送時刻の推定です。SomnoGraph互換性は未検証です。\r\n`+
         `サンプルレート・チャンネル数のコンテナ実測は未実装です。\r\n`+
@@ -1848,6 +1979,36 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
       await storeJSON(zip,prefix+'log.json','sessionLogs',s);
       await storeJSON(zip,prefix+'profileBins.json','profileBins',s);
       await storeJSON(zip,prefix+'clips.json','clips',s);
+    await zip.entry(prefix+'events.json',async emit=>{
+      await emit('[');
+      let first=true;
+      const previous={sound:false,motion:false};
+      await visit('sessionLogs',s.sessionId,async row=>{
+        for(const type of ['sound','motion']){
+          const detected=row[type+'Detected'];
+          if(detected===true&&!previous[type]){
+            const event={
+              sessionId:s.sessionId,
+              type,
+              timestamp:row.timestamp||new Date(s.startTimeMs+row.offsetMs).toISOString(),
+              audioTimeMs:row.offsetMs,
+              offsetMs:row.offsetMs,
+              durationMs:row.durationMs,
+              sourceDbFS:row.sourceDbFS??row.soundDbFS??null,
+              adjustedDbFS:row.adjustedDbFS??
+                (row.soundDbFS==null?null:row.soundDbFS+sessionGainDb(s)),
+              motionG:row.motionG??null,
+              appliedGainDb:sessionGainDb(s)
+            };
+            if(!first)await emit(',');
+            await emit(JSON.stringify(event));
+            first=false;
+          }
+          previous[type]=detected===true;
+        }
+      });
+      await emit(']');
+    });
       await zip.entry(prefix+'audio/');
 
       await visit('audioChunks',s.sessionId,row=>
@@ -2117,7 +2278,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
 
       const path=prompt(
         'HTMLパス',
-        old.path||'SomnoLog_v20261009-02.html'
+        old.path||'SomnoLog_v20261010-01.html'
       );
       if(path===null)return;
 
@@ -2255,46 +2416,67 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
       getBuild:()=>BUILD
     });
 
-    async function openDB(){
-      return new Promise((ok,no)=>{
-        const r=indexedDB.open('SomnoLog',1);
-
-        r.onupgradeneeded=()=>{
-          const defs=[
-            ['sessions','sessionId',false],
-            ['sessionLogs','id',true],
-            ['profileBins','id',true],
-            ['clips','clipId',false],
-            ['audioChunks','chunkId',true]
-          ];
-
-          for(const [name,keyPath,autoIncrement] of defs){
-            const s=r.result.createObjectStore(name,{
-              keyPath,
-              autoIncrement
-            });
-
-            if(name!=='sessions'){
-              s.createIndex('sessionId','sessionId',{unique:false});
+    
+async function openDB(){
+  const defs=[
+    ['sessions','sessionId',false],
+    ['sessionLogs','id',true],
+    ['profileBins','id',true],
+    ['clips','clipId',false],
+    ['audioChunks','chunkId',true]
+  ];
+  const open=version=>new Promise((ok,no)=>{
+    const r=version===undefined?indexedDB.open('SomnoLog'):indexedDB.open('SomnoLog',version);
+    r.onupgradeneeded=()=>{
+      for(const [name,keyPath,autoIncrement] of defs){
+        const store=r.result.objectStoreNames.contains(name)
+          ?r.transaction.objectStore(name)
+          :r.result.createObjectStore(name,{keyPath,autoIncrement});
+        if(name!=='sessions'){
+          if(store.indexNames.contains('sessionId')){
+            const index=store.index('sessionId');
+            if(index.keyPath!=='sessionId'||index.unique||index.multiEntry){
+              store.deleteIndex('sessionId');
             }
           }
-        };
-
-        r.onerror=()=>no(r.error);
-        r.onblocked=()=>warn('別タブのDBを閉じてください');
-
-        r.onsuccess=()=>{
-          const d=r.result;
-          d.onversionchange=()=>{
-            warn('DB更新。停止後に再読み込みしてください');
-            d.close();
-          };
-          ok(d);
-        };
-      });
+          if(!store.indexNames.contains('sessionId')){
+            store.createIndex('sessionId','sessionId',{unique:false});
+          }
+        }
+      }
+    };
+    r.onerror=()=>no(r.error);
+    r.onblocked=()=>warn('DB確認中です。ほかのSomnoLogタブを閉じてください。');
+    r.onsuccess=()=>ok(r.result);
+  });
+  let d=await open();
+  let repair=false;
+  for(const [name] of defs){
+    if(!d.objectStoreNames.contains(name)){repair=true;continue;}
+    if(name!=='sessions'){
+      const store=d.transaction(name).objectStore(name);
+      if(!store.indexNames.contains('sessionId')){repair=true;continue;}
+      const index=store.index('sessionId');
+      if(index.keyPath!=='sessionId'||index.unique||index.multiEntry)repair=true;
     }
+  }
+  if(repair){
+    const version=d.version+1;
+    d.close();
+    d=await open(version);
+  }
+  d.onversionchange=()=>{
+    d.close();
+    db=null;
+    warn('DBが別タブで変更されました。再読み込みしてください。');
+    controls();
+    if(active)stop().catch(error);
+  };
+  return d;
+}
+  
 
-    async function recover(){
+  async function recover(){
       await loadHistory();
 
       for(const s of history){
@@ -2402,6 +2584,7 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
       }
 
       db=await openDB();
+      await storageCheck();
       await recover();
       await loadHistory();
 
@@ -2435,5 +2618,3 @@ dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
   </script>
   </body>
   </html>
-
-
