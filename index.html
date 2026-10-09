@@ -297,1648 +297,1842 @@
   </dialog>
 
   <script>
-  (() => {
-    "use strict";
-
-    const APP_VERSION = "v20261009-02";
-    const BUILD_MARKER = "SOMNOLOG_FROZEN_UI_PHASE2";
-    const REPOSITORY = "matsuodentalassociation/sleep_track";
-    const REPOSITORY_BRANCH = "main";
-    const REPOSITORY_FILE = "index.html";
-    const DB_NAME = "SomnoLog";
-    const DB_VERSION = 1;
-    const CHUNK_INTERVAL_MS = 30000;
-    const REQUESTED_SAMPLE_RATE = 22050;
-    const REQUESTED_BITRATE = 32000;
-    const LEASE_KEY = "__somnolog_runtime_lease__";
-    const LEASE_MS = 15000;
-    const el = id => document.getElementById(id);
-    const pad = n => String(n).padStart(2, "0");
-    const ownerId = crypto.randomUUID
-      ? crypto.randomUUID()
-      : Array.from(crypto.getRandomValues(new Uint32Array(4)))
-          .map(n => n.toString(16)).join("-");
-    const sessionSuffix = () =>
-      Array.from(crypto.getRandomValues(new Uint8Array(6)))
-        .map(n => n.toString(16).padStart(2, "0")).join("");
-
-    // DOMが実測値や状態で変わる前に、更新互換性確認用の正本を保持する。
-    function frozenShell(doc) {
-      const copy = doc.documentElement.cloneNode(true);
-      copy.querySelectorAll("script").forEach(node => node.remove());
-      const walker = doc.createTreeWalker(copy, NodeFilter.SHOW_COMMENT);
-      const comments = [];
-      while (walker.nextNode()) comments.push(walker.currentNode);
-      comments.forEach(node => node.remove());
-      return copy.outerHTML;
-    }
-    const expectedShell = frozenShell(document);
-
-    let db = null;
-    let disposed = false;
-    let ownsRuntime = false;
-    let releasingRuntime = null;
-    let leaseTimer = null;
-    let retryTimer = null;
-    let heartbeatTimer = null;
-    let chunkTimer = null;
-    let clockTimer = null;
-    let clockHideTimer = null;
-    let wakeLock = null;
-    let stream = null;
-    let audioContext = null;
-    let ready = { microphone: false, motion: false };
-    let motionListenerInstalled = false;
-    let lastMotionEvent = null;
-    let motionWaiter = null;
-    let recording = false;
-    let starting = false;
-    let stopping = false;
-    let updating = false;
-    let activeSession = null;
-    let currentSession = null;
-    let recorder = null;
-    let recorderStopPromise = null;
-    let recorderStopResolve = null;
-    let recordingStartMono = 0;
-    let lastChunkEventOffset = 0;
-    let sequence = 0;
-    let pendingChunks = 0;
-    let saveChain = Promise.resolve();
-    let recordingFault = null;
-    let records = [];
-    let calendarReturnScreen = "capture-screen";
-    const initialDate = new Date();
-    const dateKey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
-    const todayKey = () => {
-      const n = new Date();
-      return dateKey(n.getFullYear(), n.getMonth(), n.getDate());
-    };
-    let month = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
-    let mode = "single";
-    let selected = todayKey();
-    let rangeStart = null;
-    let rangeEnd = null;
-
-    function errorText(error) {
-      if (!error) return "原因不明";
-      return `${error.name || "Error"}: ${error.message || String(error)}`;
-    }
-
-    function closeDialogs() {
-      document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close());
-    }
-
-    function showMessage(title, text) {
-      if (disposed) return;
-      closeDialogs();
-      el("message-title").textContent = title;
-      el("message-body").textContent = text;
-      el("message").showModal();
-    }
-
-    function previewMessage(title, text) {
-      closeDialogs();
-      el("preview-title").textContent = title;
-      el("preview-dialog").querySelector("p").textContent = text;
-      el("preview-dialog").showModal();
-    }
-
-    function showScreen(id) {
-      closeDialogs();
-      clearTimeout(clockHideTimer);
-      el("black-screen").hidden = true;
-      document.body.style.overflow = "";
-      ["capture-screen", "record-screen", "calendar-screen"]
-        .forEach(name => { el(name).hidden = name !== id; });
-      window.scrollTo(0, 0);
-      const heading = id === "capture-screen" ? "capture-heading"
-        : id === "record-screen" ? "result-heading" : "calendar-heading";
-      el(heading).focus();
-    }
-
-    function setDuration(node, ms) {
-      node.replaceChildren();
-      if (!Number.isFinite(ms)) {
-        node.textContent = "取得できず";
-        return;
-      }
-      const total = Math.max(0, Math.round(ms / 1000));
-      const units = [
-        [Math.floor(total / 3600), "時間"],
-        [Math.floor(total % 3600 / 60), "分"],
-        [total % 60, "秒"]
-      ];
-      units.forEach(([number, unit]) => {
-        node.append(document.createTextNode(String(number)));
-        const small = document.createElement("small");
-        small.textContent = unit;
-        node.append(small);
-      });
-    }
-
-    function datetime(ms) {
-      if (!Number.isFinite(ms)) return "取得できず";
-      const d = new Date(ms);
-      return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} `
-        + `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    }
-
-    function isoLocal(ms) {
-      const d = new Date(ms);
-      const offset = -d.getTimezoneOffset();
-      const sign = offset >= 0 ? "+" : "-";
-      const absolute = Math.abs(offset);
-      return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-        + `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-        + `.${String(d.getMilliseconds()).padStart(3, "0")}`
-        + `${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
-    }
-
-    function sessionDate(session) {
-      const d = new Date(session.recording.startEpochMs);
-      return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
-    }
-
-    function rangeText(session) {
-      if (!session) return "記録なし";
-      return `${datetime(session.recording.startEpochMs)} → `
-        + `${datetime(session.recording.endEpochMs)}`;
-    }
-
-    function renderSummary(session) {
-      currentSession = session || null;
-      el("result-range").textContent = rangeText(session);
-      el("save-range").textContent = rangeText(session);
-      el("save-button").disabled = !session;
-      if (!session) {
-        el("result-year").textContent = "記録なし";
-        el("result-time-detail").textContent = "端末内に完了記録はありません。";
-        setDuration(el("result-duration"), null);
-        setDuration(el("sound-duration"), null);
-        setDuration(el("motion-duration"), null);
-        return;
-      }
-      const date = new Date(session.recording.startEpochMs);
-      el("result-year").textContent =
-        `${date.getFullYear()}年の記録／${session.appVersion}`;
-      setDuration(el("result-duration"), session.recording.totalDurationMs);
-      setDuration(el("sound-duration"), session.metrics.soundDetectedMs);
-      setDuration(el("motion-duration"), session.metrics.motionDetectedMs);
-      el("record-screen").querySelector(".badge").textContent =
-        session.state === "recovered" ? "中断回復" : "記録終了";
-      const mib = (session.audioBytes / 1048576).toFixed(2);
-      el("result-time-detail").textContent =
-        `${session.audioChunkCount}チャンク／音声 ${mib} MiB／`
-        + `音・体動集計はPhase 3未実装。`
-        + (session.state === "recovered"
-          ? "終了日時は最後に保存済みのチャンク境界です。未保存区間は不明。"
-          : "")
-        + (session.fault ? ` 異常：${session.fault}` : "");
-      el("save-status").textContent = session.calendarSaved
-        ? "カレンダー登録済み。音声とセッションは端末内に保存されています。"
-        : "音声とセッションは端末内に保存済み。カレンダーへの登録は下のボタンで行います。";
-    }
-
-    function updateControls() {
-      const busy = starting || stopping || updating || disposed;
-      const liveTrack = stream && stream.getAudioTracks()
-        .some(track => track.readyState === "live");
-      ready.microphone = Boolean(liveTrack);
-      el("start").disabled = busy || recording || !db || !ownsRuntime
-        || !ready.microphone || !ready.motion;
-      el("stop-button").disabled = !recording || stopping;
-      el("black-button").disabled = !recording || stopping;
-      el("history-button").disabled = recording || busy || !db;
-      el("microphone-permission").disabled = recording || busy || !ownsRuntime;
-      el("motion-permission").disabled = recording || busy || !ownsRuntime;
-      el("microphone-permission").hidden = ready.microphone;
-      el("motion-permission").hidden = ready.motion;
-    }
-
-    function openDatabase() {
-      return new Promise((resolve, reject) => {
-        const request = indexedDB.open(DB_NAME, DB_VERSION);
-        request.onupgradeneeded = () => {
-          const database = request.result;
-          if (!database.objectStoreNames.contains("sessions")) {
-            database.createObjectStore("sessions", { keyPath: "sessionId" });
-          }
-          for (const name of ["sessionLogs", "profileBins", "clips", "audioChunks"]) {
-            if (!database.objectStoreNames.contains(name)) {
-              const store = database.createObjectStore(name, { keyPath: "id" });
-              store.createIndex("sessionId", "sessionId", { unique: false });
-            }
-          }
-        };
-        request.onblocked = () => {
-          showMessage("保存領域の更新待ち",
-            "旧版を開いている別タブを閉じてください。IndexedDBを更新できません。");
-        };
-        request.onerror = () => reject(request.error);
-        request.onsuccess = () => {
-          const database = request.result;
-          const required = [
-            "sessions", "sessionLogs", "profileBins", "clips", "audioChunks"
-          ];
-          if (!required.every(name => database.objectStoreNames.contains(name))) {
-            database.close();
-            reject(new Error("既存IndexedDBのストア構成が正本仕様と異なります。削除せず停止しました。"));
-            return;
-          }
-          database.onversionchange = () => {
-            if (recording) emergencyStop(new Error("IndexedDBのバージョンが変更されました。"));
-            database.close();
-            db = null;
-            updateControls();
-          };
-          resolve(database);
-        };
-      });
-    }
-
-    function transaction(names, mode, run) {
-      return new Promise((resolve, reject) => {
-        if (!db) {
-          reject(new Error("IndexedDBが利用できません。"));
-          return;
-        }
-        let result;
-        let tx;
-        try {
-          tx = db.transaction(names, mode);
-          tx.oncomplete = () => resolve(result);
-          tx.onerror = () => reject(tx.error || new Error("保存トランザクション失敗"));
-          tx.onabort = () => reject(tx.error || new Error("保存トランザクション中断"));
-          run(tx, value => { result = value; });
-        } catch (error) {
-          if (tx) {
-            try { tx.abort(); } catch (_) {}
-          }
-          reject(error);
-        }
-      });
-    }
-
-    function getRecord(store, key) {
-      return transaction([store], "readonly", (tx, setResult) => {
-        const request = tx.objectStore(store).get(key);
-        request.onsuccess = () => setResult(request.result);
-      });
-    }
-
-    function getSessions() {
-      return transaction(["sessions"], "readonly", (tx, setResult) => {
-        const request = tx.objectStore("sessions").getAll();
-        request.onsuccess = () => setResult(request.result);
-      });
-    }
-
-    function putSession(session) {
-      return transaction(["sessions"], "readwrite", tx => {
-        tx.objectStore("sessions").put(session);
-      });
-    }
-
-    async function patientId() {
-      const registered = await getRecord("clips", "somnolog_patient_id");
-      if (registered) {
-        const value = registered.patientId || registered.value;
-        if (typeof value === "string" && value.trim()) return value.trim();
-      }
-      try {
-        const stored = localStorage.getItem("somnolog_patient_id");
-        if (stored && stored.trim()) return stored.trim();
-      } catch (_) {}
-      return "UNREGISTERED";
-    }
-
-    function claimLease() {
-      return transaction(["clips"], "readwrite", (tx, setResult) => {
-        const store = tx.objectStore("clips");
-        const request = store.get(LEASE_KEY);
-        request.onsuccess = () => {
-          const previous = request.result;
-          const now = Date.now();
-          if (previous && previous.owner !== ownerId && previous.expiresAt > now) {
-            setResult(false);
-            return;
-          }
-          store.put({ id: LEASE_KEY, owner: ownerId, expiresAt: now + LEASE_MS });
-          setResult(true);
-        };
-      });
-    }
-
-    async function renewLease() {
-      if (!db || !ownsRuntime || disposed) return;
-      try {
-        const renewed = await claimLease();
-        if (!renewed) {
-          ownsRuntime = false;
-          updateControls();
-          emergencyStop(new Error("別タブが保存領域の使用権を取得しました。"));
-        }
-      } catch (error) {
-        ownsRuntime = false;
-        updateControls();
-        emergencyStop(error);
-      }
-    }
-
-    async function releaseLease() {
-      if (!db) return;
-      await transaction(["clips"], "readwrite", tx => {
-        const store = tx.objectStore("clips");
-        const request = store.get(LEASE_KEY);
-        request.onsuccess = () => {
-          if (request.result && request.result.owner === ownerId) {
-            store.delete(LEASE_KEY);
-          }
-        };
-      });
-    }
-
-    async function acquireRuntime() {
-      if (disposed || !db || ownsRuntime) return;
-      const tryAcquire = async () => {
-        const success = await claimLease();
-        if (!success) return false;
-        ownsRuntime = true;
-        clearInterval(leaseTimer);
-        leaseTimer = setInterval(renewLease, 3000);
-        await recoverSessions();
-        await refreshRecords();
-        updateControls();
-        return true;
-      };
-
-      if (navigator.locks && navigator.locks.request) {
-        await new Promise((resolve, reject) => {
-          let resolved = false;
-          navigator.locks.request(
-            "somnolog-recording-runtime",
-            { mode: "exclusive", ifAvailable: true },
-            async lock => {
-              if (!lock) {
-                resolved = true;
-                resolve(false);
-                return;
-              }
-              try {
-                const success = await tryAcquire();
-                if (!success) {
-                  resolved = true;
-                  resolve(false);
-                  return;
-                }
-                resolved = true;
-                resolve(true);
-                await new Promise(done => { releasingRuntime = done; });
-              } catch (error) {
-                if (!resolved) reject(error);
-                else console.error(error);
-              }
-            }
-          ).catch(reject);
-        });
-      } else {
-        await tryAcquire();
-      }
-
-      if (!ownsRuntime && !disposed) {
-        updateControls();
-        clearTimeout(retryTimer);
-        retryTimer = setTimeout(() => {
-          acquireRuntime().catch(error => showMessage("初期化失敗", errorText(error)));
-        }, 3000);
-      }
-    }
-
-    async function recoverSessions() {
-      const sessions = await getSessions();
-      let recoveredCount = 0;
-      for (const session of sessions) {
-        if (session.state !== "recording") continue;
-        // 使用権を取れた後だけ回復する。別タブの録音を完了扱いにしない。
-        const end = Number.isFinite(session.lastPersistedEpochMs)
-          ? session.lastPersistedEpochMs : session.recording.startEpochMs;
-        session.state = "recovered";
-        session.calendarSaved = true;
-        session.recording.endEpochMs = end;
-        session.recording.endTime = isoLocal(end);
-        session.recording.totalDurationMs =
-          Math.max(0, end - session.recording.startEpochMs);
-        session.metrics.dataStatus = "has_missing";
-        session.recovery = {
-          recoveredAt: Date.now(),
-          endTimeBasis: "last_persisted_chunk_boundary",
-          unsavedTailDurationMs: null,
-          audioFinalized: false
-        };
-        session.fault = session.fault || "前回の記録が正常終了していません。未保存区間は不明。";
-        await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
-          tx.objectStore("sessions").put(session);
-          tx.objectStore("sessionLogs").put({
-            id: `${session.sessionId}:recovery:${Date.now()}`,
-            sessionId: session.sessionId,
-            kind: "lifecycle",
-            timestamp: Date.now(),
-            event: "recovered",
-            status: "missing",
-            detail: "保存済みデータのみ回復。音声コンテナの完結・再生は未保証。"
-          });
-        });
-        recoveredCount++;
-      }
-      if (recoveredCount) {
-        showMessage("未完了記録を回復",
-          `${recoveredCount}件を保存済みチャンクの境界まで回復しました。`
-          + "未保存区間は補完していません。音声再生の可否は未確認です。");
-      }
-    }
-
-    function ensureAudioContextFromGesture() {
-      const Constructor = window.AudioContext || window.webkitAudioContext;
-      if (!Constructor) throw new Error("AudioContextに対応していません。");
-      if (!audioContext || audioContext.state === "closed") {
-        try {
-          audioContext = new Constructor({ sampleRate: REQUESTED_SAMPLE_RATE });
-        } catch (_) {
-          audioContext = new Constructor();
-        }
-      }
-      // タップ直下で呼ぶ。ここより前にawaitを置かない。
-      const resumed = audioContext.resume();
-      return resumed || Promise.resolve();
-    }
-
-    function installTrackEvents(mediaStream) {
-      mediaStream.getAudioTracks().forEach(track => {
-        track.addEventListener("ended", () => {
-          ready.microphone = false;
-          updateControls();
-          if (recording) emergencyStop(new Error("マイク入力が終了しました。"));
-        });
-        track.addEventListener("mute", () => {
-          if (recording) emergencyStop(new Error("マイク入力が途絶しました。欠測として停止します。"));
-        });
-      });
-    }
-
-    async function requestMicrophone(resumePromise) {
-      try {
-        await resumePromise;
-        if (!window.isSecureContext || !navigator.mediaDevices
-            || !navigator.mediaDevices.getUserMedia) {
-          throw new Error("HTTPS上でマイク対応ブラウザから開いてください。");
-        }
-        if (stream) stream.getTracks().forEach(track => track.stop());
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            channelCount: { ideal: 1 },
-            sampleRate: { ideal: REQUESTED_SAMPLE_RATE },
-            echoCancellation: false,
-            noiseSuppression: false,
-            autoGainControl: false
-          },
-          video: false
-        });
-        installTrackEvents(stream);
-        ready.microphone = true;
-        updateControls();
-        const settings = stream.getAudioTracks()[0].getSettings();
-        previewMessage("マイク許可済み",
-          `実入力：${settings.sampleRate || "不明"} Hz／`
-          + `${settings.channelCount || "不明"}チャンネル。`
-          + "録音時は32kbpsを要求しますが、エンコード後の実値は別途検証が必要です。"
-          + "入力メーター・100ms集計はPhase 3で実装します。");
-      } catch (error) {
-        ready.microphone = false;
-        updateControls();
-        showMessage("マイクを利用できません", errorText(error));
-      }
-    }
-
-    function onMotion(event) {
-      const acceleration = event.acceleration;
-      const gravity = event.accelerationIncludingGravity;
-      const available = [acceleration, gravity].some(value =>
-        value && [value.x, value.y, value.z].some(Number.isFinite));
-      if (!available) return;
-      lastMotionEvent = Date.now();
-      if (motionWaiter) {
-        motionWaiter();
-        motionWaiter = null;
-      }
-    }
-
-    function waitForMotion(timeoutMs) {
-      return new Promise((resolve, reject) => {
-        if (lastMotionEvent && Date.now() - lastMotionEvent < 2000) {
-          resolve();
-          return;
-        }
-        const timer = setTimeout(() => {
-          motionWaiter = null;
-          reject(new Error("モーションの実入力を取得できません。端末設定とブラウザ対応を確認してください。"));
-        }, timeoutMs);
-        motionWaiter = () => {
-          clearTimeout(timer);
-          resolve();
-        };
-      });
-    }
-
-    async function requestMotion(permissionPromise) {
-      try {
-        if (!window.DeviceMotionEvent) {
-          throw new Error("DeviceMotionEventに対応していません。");
-        }
-        const permission = await permissionPromise;
-        if (permission !== "granted") throw new Error("モーション権限が許可されていません。");
-        if (!motionListenerInstalled) {
-          window.addEventListener("devicemotion", onMotion);
-          motionListenerInstalled = true;
-        }
-        await waitForMotion(7000);
-        ready.motion = true;
-        updateControls();
-        previewMessage("モーション入力確認済み",
-          "実イベントの取得を確認しました。重力除去・100ms窓集計・メーター描画はPhase 3で実装します。");
-      } catch (error) {
-        ready.motion = false;
-        updateControls();
-        showMessage("モーションを利用できません", errorText(error));
-      }
-    }
-
-    function selectMimeType() {
-      if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) {
-        throw new Error("MediaRecorderに対応していません。");
-      }
-      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-        || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-      const mp4 = ["audio/mp4", "audio/mp4;codecs=mp4a.40.2"];
-      const webm = ["audio/webm;codecs=opus", "audio/webm"];
-      const candidates = isIOS ? [...mp4, ...webm] : [...webm, ...mp4];
-      const selectedType = candidates.find(type => MediaRecorder.isTypeSupported(type));
-      if (!selectedType) {
-        throw new Error("指定のMP4/AACまたはWebM形式に対応していません。");
-      }
-      return selectedType;
-    }
-
-    function elapsedNow() {
-      return Math.max(0, Math.round(performance.now() - recordingStartMono));
-    }
-
-    async function acquireWakeLock() {
-      if (!recording || document.visibilityState !== "visible"
-          || !navigator.wakeLock) return;
-      try {
-        if (wakeLock && !wakeLock.released) return;
-        wakeLock = await navigator.wakeLock.request("screen");
-        wakeLock.addEventListener("release", () => { wakeLock = null; });
-      } catch (error) {
-        console.warn("画面点灯維持を取得できません:", error);
-      }
-    }
-
-    async function releaseWakeLock() {
-      const lock = wakeLock;
-      wakeLock = null;
-      if (lock && !lock.released) {
-        try { await lock.release(); } catch (_) {}
-      }
-    }
-
-    function enqueueAudio(blob, eventOffset) {
-      if (!activeSession || !blob || !blob.size) return;
-      const session = activeSession;
-      const seq = ++sequence;
-      const previousOffset = lastChunkEventOffset;
-      lastChunkEventOffset = eventOffset;
-      pendingChunks++;
-      if (pendingChunks > 3) {
-        emergencyStop(new Error("音声の保存が録音速度に追いつきません。メモリ増大防止のため停止します。"));
-      }
-
-      saveChain = saveChain.then(async () => {
-        let bytes = null;
-        try {
-          bytes = await blob.arrayBuffer();
-          const id = `${session.sessionId}:${String(seq).padStart(8, "0")}`;
-          const chunk = {
-            id,
-            sessionId: session.sessionId,
-            sequence: seq,
-            mimeType: recorder ? recorder.mimeType : session.audioConfig.mimeType,
-            startOffsetMs: previousOffset,
-            endOffsetMs: eventOffset,
-            durationMs: Math.max(0, eventOffset - previousOffset),
-            offsetBasis: "dataavailable_callback_monotonic_time",
-            isIndependentMediaFile: null,
-            byteLength: bytes.byteLength,
-            data: bytes
-          };
-          const next = structuredClone(session);
-          next.audioBytes += bytes.byteLength;
-          next.audioChunkCount++;
-          next.lastPersistedOffsetMs = eventOffset;
-          next.lastPersistedEpochMs =
-            next.recording.startEpochMs + eventOffset;
-          next.heartbeatEpochMs = Date.now();
-          await transaction(["audioChunks", "sessions"], "readwrite", tx => {
-            tx.objectStore("audioChunks").add(chunk);
-            tx.objectStore("sessions").put(next);
-          });
-          Object.assign(session, next);
-        } catch (error) {
-          recordingFault = recordingFault || errorText(error);
-          emergencyStop(error);
-        } finally {
-          // オブジェクトURLを作らないためrevoke対象はない。
-          // 逐次書込み完了後にArrayBufferとBlobを保持しない。
-          bytes = null;
-          pendingChunks--;
-        }
-      });
-    }
-
-    async function beginRecording(resumePromise) {
-      if (recording || starting || stopping || updating || !ownsRuntime) return;
-      starting = true;
-      updateControls();
-      let sessionWritten = false;
-      try {
-        await resumePromise;
-        if (!await claimLease()) throw new Error("別タブで使用中です。");
-        if (!stream || !stream.getAudioTracks().some(t => t.readyState === "live")) {
-          throw new Error("マイクを再度許可してください。");
-        }
-        if (!ready.motion) throw new Error("モーション入力を先に許可してください。");
-        const mimeType = selectMimeType();
-        const settings = stream.getAudioTracks()[0].getSettings();
-        const startEpochMs = Date.now();
-        const startDate = new Date(startEpochMs);
-        const sessionId = `sess_${startDate.getFullYear()}`
-          + `${pad(startDate.getMonth() + 1)}${pad(startDate.getDate())}_`
-          + `${pad(startDate.getHours())}${pad(startDate.getMinutes())}`
-          + `${pad(startDate.getSeconds())}_${sessionSuffix()}`;
-        const identifier = await patientId();
-        recorder = new MediaRecorder(stream, {
-          mimeType,
-          audioBitsPerSecond: REQUESTED_BITRATE
-        });
-        activeSession = {
-          formatVersion: "zip-store-v1",
-          appVersion: APP_VERSION,
-          implementationPhase: 2,
-          sessionId,
-          patientId: identifier,
-          state: "recording",
-          calendarSaved: false,
-          owner: ownerId,
-          recording: {
-            startTime: isoLocal(startEpochMs),
-            endTime: null,
-            startEpochMs,
-            endEpochMs: null,
-            totalDurationMs: null
-          },
-          metrics: {
-            baselineDbFS: null,
-            soundThresholdDb: 10,
-            motionThresholdG: 0.05,
-            soundDetectedMs: null,
-            motionDetectedMs: null,
-            dataStatus: "unobtainable"
-          },
-          audioConfig: {
-            mimeType: recorder.mimeType || mimeType,
-            sampleRate: null,
-            channels: null,
-            bitrate: recorder.audioBitsPerSecond || null
-          },
-          audioDiagnostics: {
-            requestedSampleRate: REQUESTED_SAMPLE_RATE,
-            requestedChannels: 1,
-            requestedBitrate: REQUESTED_BITRATE,
-            inputSampleRate: settings.sampleRate || null,
-            inputChannels: settings.channelCount || null,
-            audioContextSampleRate: audioContext.sampleRate,
-            encodedSampleRateVerified: false,
-            encodedChannelsVerified: false,
-            chunkPlaybackVerified: false
-          },
-          audioFiles: [],
-          audioBytes: 0,
-          audioChunkCount: 0,
-          lastPersistedEpochMs: startEpochMs,
-          lastPersistedOffsetMs: 0,
-          heartbeatEpochMs: startEpochMs,
-          audioFinalized: false,
-          fault: null
-        };
-        await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
-          tx.objectStore("sessions").add(activeSession);
-          tx.objectStore("sessionLogs").add({
-            id: `${sessionId}:start`,
-            sessionId,
-            kind: "lifecycle",
-            timestamp: startEpochMs,
-            event: "start_requested",
-            detail: "Phase 2。センシングログは未取得。"
-          });
-        });
-        sessionWritten = true;
-        recordingFault = null;
-        sequence = 0;
-        pendingChunks = 0;
-        saveChain = Promise.resolve();
-        lastChunkEventOffset = 0;
-        recorderStopPromise = new Promise(resolve => {
-          recorderStopResolve = resolve;
-        });
-        recorder.addEventListener("dataavailable", event => {
-          enqueueAudio(event.data, elapsedNow());
-        });
-        recorder.addEventListener("error", event => {
-          emergencyStop(event.error || new Error("MediaRecorderのエラー"));
-        });
-        recorder.addEventListener("stop", () => {
-          if (recorderStopResolve) recorderStopResolve();
-          if (recording && !stopping) {
-            emergencyStop(new Error("録音が予期せず終了しました。"));
-          }
-        });
-        // 全ブラウザ共通でtimesliceを渡さない。
-        recordingStartMono = performance.now();
-        recorder.start();
-        recording = true;
-        starting = false;
-        chunkTimer = setInterval(() => {
-          if (!recorder || recorder.state !== "recording" || stopping) return;
-          try { recorder.requestData(); } catch (error) { emergencyStop(error); }
-        }, CHUNK_INTERVAL_MS);
-        heartbeatTimer = setInterval(() => {
-          if (!activeSession || !recording || stopping) return;
-          saveChain = saveChain.then(async () => {
-            activeSession.heartbeatEpochMs = Date.now();
-            try { await putSession(activeSession); }
-            catch (error) { emergencyStop(error); }
-          });
-        }, 5000);
-        updateControls();
-        await acquireWakeLock();
-        previewMessage("記録開始 — Phase 2",
-          "実際の圧縮音声を約30秒ごとに端末内へ保存します。"
-          + "音・体動の検出時間と実測メーターは未実装です。"
-          + "黒画面は画面ロックではありません。手動ロック・背景移行による継続は保証しません。");
-      } catch (error) {
-        recording = false;
-        if (recorder && recorder.state !== "inactive") {
-          try { recorder.stop(); } catch (_) {}
-        }
-        if (sessionWritten && activeSession) {
-          activeSession.state = "recovered";
-          activeSession.calendarSaved = true;
-          activeSession.fault = errorText(error);
-          activeSession.recording.endEpochMs =
-            activeSession.lastPersistedEpochMs;
-          activeSession.recording.endTime =
-            isoLocal(activeSession.lastPersistedEpochMs);
-          activeSession.recording.totalDurationMs = 0;
-          activeSession.metrics.dataStatus = "has_missing";
-          try { await putSession(activeSession); } catch (_) {}
-        }
-        activeSession = null;
-        recorder = null;
-        starting = false;
-        updateControls();
-        showMessage("記録開始に失敗", errorText(error));
-      }
-    }
-
-    function emergencyStop(error) {
-      recordingFault = recordingFault || errorText(error);
-      if (!recording || stopping) return;
-      // 保存キューの内部から呼ばれても、同じキューを再帰的に待たない。
-      queueMicrotask(() => {
-        if (recording && !stopping) {
-          stopRecording().catch(failure => {
-            showMessage("停止処理に失敗", errorText(failure));
-          });
-        }
-      });
-    }
-
-    async function stopRecording() {
-      if (!recording || stopping) return;
-      stopping = true;
-      clearInterval(chunkTimer);
-      clearInterval(heartbeatTimer);
-      updateControls();
-      const session = activeSession;
-      const stopOffset = elapsedNow();
-      const userStopEpochMs = session.recording.startEpochMs + stopOffset;
-      try {
-        if (recorder && recorder.state !== "inactive") recorder.stop();
-        if (recorderStopPromise) {
-          let timer;
-          try {
-            await Promise.race([
-              recorderStopPromise,
-              new Promise((_, reject) => {
-                timer = setTimeout(() => reject(
-                  new Error("MediaRecorderの最終データ待ちが30秒を超えました。")
-                ), 30000);
-              })
-            ]);
-          } finally {
-            clearTimeout(timer);
-          }
-        }
-        // stopイベントに先行する最後のdataavailableを含めて保存完了を待つ。
-        await saveChain;
-        session.state = recordingFault ? "recovered" : "completed";
-        session.calendarSaved = Boolean(recordingFault);
-        session.fault = recordingFault;
-        session.audioFinalized = !recordingFault;
-        const end = recordingFault
-          ? session.lastPersistedEpochMs : userStopEpochMs;
-        session.recording.endEpochMs = end;
-        session.recording.endTime = isoLocal(end);
-        session.recording.totalDurationMs =
-          Math.max(0, end - session.recording.startEpochMs);
-        if (recordingFault) session.metrics.dataStatus = "has_missing";
-        await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
-          tx.objectStore("sessions").put(session);
-          tx.objectStore("sessionLogs").put({
-            id: `${session.sessionId}:stop`,
-            sessionId: session.sessionId,
-                         kind: "lifecycle",
-              timestamp: Date.now(),
-              event: recordingFault ? "stopped_with_error" : "stopped",
-              detail: recordingFault || "最終音声データの保存完了"
-            });
-          });
-          renderSummary(session);
-          await refreshRecords();
-          showScreen("record-screen");
-          if (recordingFault) {
-            showMessage("記録を保存済み範囲まで回復",
-              `${recordingFault} 未保存区間は補完していません。`);
-          }
-        } catch (error) {
-          recordingFault = recordingFault || errorText(error);
-          // 完了書込みに失敗した場合、DB上のrecording状態を残して
-          // 次回起動時の回復対象とする。
-          showMessage("停止・保存処理に失敗",
-            `${errorText(error)} 次回起動時に保存済み範囲の回復を試みます。`);
-        } finally {
-          recording = false;
-          starting = false;
-          stopping = false;
-          clearInterval(chunkTimer);
-          clearInterval(heartbeatTimer);
-          await releaseWakeLock();
-          if (stream) {
-            stream.getTracks().forEach(track => track.stop());
-            stream = null;
-          }
-          ready.microphone = false;
-          activeSession = null;
-          recorder = null;
-          recorderStopPromise = null;
-          recorderStopResolve = null;
-          updateControls();
-        }
-      }
-
-      function fullLabel(key) {
-        const [year, monthNumber, day] = key.split("-").map(Number);
-        return `${year}年${monthNumber}月${day}日`;
-      }
-
-      function periodLabel(first, last) {
-        return first === last
-          ? fullLabel(first)
-          : `${fullLabel(first)}〜${fullLabel(last)}`;
-      }
-
-      function bounds() {
-        return mode === "single"
-          ? [selected, selected]
-          : [rangeStart, rangeEnd];
-      }
-
-      function visibleRecords() {
-        const [first, last] = bounds();
-        if (!first || !last) return [];
-        return records
-          .filter(session => {
-            const key = sessionDate(session);
-            return key >= first && key <= last;
-          })
-          .sort((a, b) =>
-            a.recording.startEpochMs - b.recording.startEpochMs);
-      }
-
-      async function refreshRecords() {
-        if (!db) return;
-        const all = await getSessions();
-        records = all.filter(session =>
-          (session.state === "completed" || session.state === "recovered")
-          && session.calendarSaved
-          && session.recording
-          && Number.isFinite(session.recording.startEpochMs));
-        render();
-
-        if (!currentSession) {
-          const latest = all
-            .filter(session =>
-              (session.state === "completed" || session.state === "recovered")
-              && session.recording
-              && Number.isFinite(session.recording.startEpochMs))
-            .sort((a, b) =>
-              b.recording.startEpochMs - a.recording.startEpochMs)[0];
-          renderSummary(latest || null);
-        }
-      }
-
-      function chooseDate(key) {
-        if (mode === "single") {
-          selected = key;
-        } else if (!rangeStart || rangeEnd) {
-          rangeStart = key;
-          rangeEnd = null;
-        } else {
-          rangeEnd = key;
-          if (rangeEnd < rangeStart) {
-            [rangeStart, rangeEnd] = [rangeEnd, rangeStart];
-          }
-        }
-        render();
-        const button = Array.from(el("days").children)
-          .find(node => node.dataset && node.dataset.date === key);
-        if (button) button.focus();
-      }
-
-      function renderCalendar() {
-        const year = month.getFullYear();
-        const monthIndex = month.getMonth();
-        el("month-title").textContent = `${year}年${monthIndex + 1}月`;
-        el("single-mode").classList.toggle("active", mode === "single");
-        el("range-mode").classList.toggle("active", mode === "range");
-        el("single-mode").setAttribute(
-          "aria-pressed", String(mode === "single"));
-        el("range-mode").setAttribute(
-          "aria-pressed", String(mode === "range"));
-        el("selection-hint").textContent = mode === "single"
-          ? "確認したい日付を選んでください。"
-          : !rangeStart
-            ? "① 開始日を選んでください。"
-            : !rangeEnd
-              ? "② 終了日を選んでください。"
-              : "期間を選択しました。別の日付を押すと選び直せます。";
-        el("range-tools").hidden = mode !== "range";
-        el("range-label").textContent = !rangeStart
-          ? "期間未選択"
-          : !rangeEnd
-            ? `開始日：${fullLabel(rangeStart)}`
-            : periodLabel(rangeStart, rangeEnd);
-
-        const grid = el("days");
-        grid.replaceChildren();
-        const firstWeekday = new Date(year, monthIndex, 1).getDay();
-        for (let i = 0; i < firstWeekday; i++) {
-          const blank = document.createElement("span");
-          blank.setAttribute("aria-hidden", "true");
-          grid.append(blank);
-        }
-        const count = new Date(year, monthIndex + 1, 0).getDate();
-        for (let day = 1; day <= count; day++) {
-          const key = dateKey(year, monthIndex, day);
-          const weekday = new Date(year, monthIndex, day).getDay();
-          const hasData = records.some(session => sessionDate(session) === key);
-          const edge = mode === "single"
-            ? key === selected
-            : key === rangeStart || key === rangeEnd;
-          const inside = Boolean(mode === "range" && rangeStart && rangeEnd
-            && key >= rangeStart && key <= rangeEnd);
-          const button = document.createElement("button");
-          button.type = "button";
-          button.className = "day"
-            + (weekday === 0 ? " sun" : weekday === 6 ? " sat" : "")
-            + (key === todayKey() ? " today" : "")
-            + (inside ? " in-range" : "")
-            + (edge ? " selected" : "");
-          button.dataset.date = key;
-          button.setAttribute("aria-pressed", String(edge || inside));
-          button.setAttribute("aria-label",
-            `${fullLabel(key)}、保存記録${hasData ? "あり" : "なし"}`
-            + (key === todayKey() ? "、今日" : ""));
-          const number = document.createElement("span");
-          number.textContent = String(day);
-          const dot = document.createElement("span");
-          dot.className = "dot" + (hasData ? "" : " empty");
-          dot.setAttribute("aria-hidden", "true");
-          button.append(number, dot);
-          button.addEventListener("click", () => chooseDate(key));
-          grid.append(button);
-        }
-      }
-
-      function renderRecords() {
-        const [first, last] = bounds();
-        const matched = visibleRecords();
-        const complete = Boolean(first && last);
-        const list = el("record-list");
-        list.replaceChildren();
-        el("selected-heading").textContent = complete
-          ? `${periodLabel(first, last)}の記録（${matched.length}件）`
-          : "表示する期間を選択してください";
-        el("share-button").disabled = !complete || !matched.length;
-
-        if (!complete || !matched.length) {
-          const empty = document.createElement("div");
-          empty.className = "empty-state";
-          empty.textContent = complete
-            ? "保存記録はありません。"
-            : "カレンダーで開始日と終了日を選んでください。";
-          list.append(empty);
-          return;
-        }
-
-        matched.forEach(session => {
-          const card = document.createElement("article");
-          card.className = "card";
-          card.dataset.recordId = session.sessionId;
-
-          const saved = document.createElement("span");
-          saved.className = "saved";
-          saved.dataset.role = "saved-status";
-          saved.textContent = session.state === "recovered"
-            ? "✓ 保存済み／中断回復データ"
-            : "✓ カレンダーに保存済み";
-
-          const time = document.createElement("p");
-          time.className = "card-time";
-          time.dataset.role = "record-range";
-          time.textContent = rangeText(session);
-
-          const duration = document.createElement("div");
-          duration.className = "duration";
-          const label = document.createElement("span");
-          label.className = "label";
-          label.textContent = "記録時間";
-          const value = document.createElement("span");
-          value.className = "value";
-          value.dataset.role = "record-duration";
-          setDuration(value, session.recording.totalDurationMs);
-          duration.append(label, value);
-
-          const figure = document.createElement("figure");
-          figure.className = "timeline";
-          const header = document.createElement("div");
-          header.className = "timeline-header";
-          const caption = document.createElement("figcaption");
-          caption.className = "timeline-title";
-          caption.textContent = "記録タイムライン";
-          const phase = document.createElement("span");
-          phase.className = "sample";
-          phase.textContent = "Phase 3未実装";
-          header.append(caption, phase);
-
-          const chart = document.createElement("div");
-          chart.className = "chart";
-          chart.dataset.role = "timeline-chart";
-          chart.textContent =
-            "実測波形・音／体動の検出時間は未取得。サンプル値は表示しません。";
-
-          const endpoints = document.createElement("div");
-          endpoints.className = "endpoints";
-          for (const [title, timestamp] of [
-            ["記録開始", session.recording.startEpochMs],
-            ["記録停止", session.recording.endEpochMs]
-          ]) {
-            const item = document.createElement("div");
-            item.append(document.createTextNode(title));
-            const strong = document.createElement("strong");
-            strong.textContent = datetime(timestamp);
-            item.append(strong);
-            endpoints.append(item);
-          }
-          figure.append(header, chart, endpoints);
-
-          const note = document.createElement("p");
-          note.className = "note";
-          note.textContent =
-            `音声：${session.audioChunkCount}チャンク／`
-            + `${(session.audioBytes / 1048576).toFixed(2)} MiB。`
-            + "チャンクの単独再生・エクスポート互換性は未検証。";
-          card.append(saved, time, duration, figure, note);
-          list.append(card);
-        });
-      }
-
-      function render() {
-        renderCalendar();
-        renderRecords();
-      }
-
-      function openCalendar(from) {
-        calendarReturnScreen = from;
-        el("calendar-back").textContent = from === "capture-screen"
-          ? "記録画面に戻る" : "記録終了画面に戻る";
-        render();
-        showScreen("calendar-screen");
-      }
-
-      function openShare() {
-        const [first, last] = bounds();
-        const matched = visibleRecords();
-        if (!first || !last || !matched.length) return;
-        el("zip-period").textContent = periodLabel(first, last);
-        el("zip-count").textContent = `対象：${matched.length}件の睡眠記録`;
-        el("zip-name").textContent =
-          `SomnoLog_${first}${first === last ? "" : `_${last}`}.zip`;
-        el("share-status").textContent =
-          "ZIP生成はPhase 4で実装します。今回はファイルを生成しません。";
-        el("share-dialog").showModal();
-      }
-
-      function updateClock() {
-        const d = new Date();
-        const text = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-        el("black-clock").textContent = text;
-        el("black-clock").dateTime = text;
-      }
-
-      function setClockState(state) {
-        el("black-screen").dataset.clockState = state;
-        el("black-back").disabled = state === "off";
-        el("black-screen").setAttribute("aria-label", state === "off"
-          ? "黒画面。タップまたはEnterで時計と戻るボタンを表示"
-          : "時計表示。タップで明るく表示。戻るボタンで記録画面に復帰");
-        if (state === "off" && document.activeElement === el("black-back")) {
-          el("black-screen").focus();
-        }
-      }
-
-      function wakeClock() {
-        updateClock();
-        setClockState("bright");
-        clearTimeout(clockHideTimer);
-        clockHideTimer = setTimeout(() => setClockState("off"), 3000);
-      }
-
-      function leaveBlackScreen() {
-        clearTimeout(clockHideTimer);
-        el("black-screen").hidden = true;
-        document.body.style.overflow = "";
-        el("black-button").focus();
-      }
-
-      function cacheBusted(url) {
-        const target = new URL(url, location.href);
-        target.searchParams.set("_somnolog_cb",
-          `${Date.now()}-${sessionSuffix()}`);
-        return target.href;
-      }
-
-      async function fetchFresh(url, json = false) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 20000);
-        try {
-          const response = await fetch(cacheBusted(url), {
-            cache: "no-store",
-            credentials: "omit",
-            redirect: "follow",
-            signal: controller.signal,
-            headers: {
-              Accept: json ? "application/vnd.github+json" : "text/html"
-            }
-          });
-          if (!response.ok) {
-            throw new Error(`更新取得失敗：HTTP ${response.status}`);
-          }
-          return json ? await response.json() : await response.text();
-        } finally {
-          clearTimeout(timer);
-        }
-      }
-
-      async function disposeForUpdate() {
-        if (recording || starting || stopping || pendingChunks) {
-          throw new Error("録音・保存処理中は更新できません。");
-        }
-        disposed = true;
-        clearInterval(leaseTimer);
-        clearInterval(clockTimer);
-        clearInterval(chunkTimer);
-        clearInterval(heartbeatTimer);
-        clearTimeout(retryTimer);
-        clearTimeout(clockHideTimer);
-        if (motionListenerInstalled) {
-          window.removeEventListener("devicemotion", onMotion);
-        }
-        if (stream) {
-          stream.getTracks().forEach(track => track.stop());
-          stream = null;
-        }
-        await releaseWakeLock();
-        if (audioContext && audioContext.state !== "closed") {
-          try { await audioContext.close(); } catch (_) {}
-        }
-        try { await releaseLease(); } catch (_) {}
-        ownsRuntime = false;
-        if (releasingRuntime) {
-          releasingRuntime();
-          releasingRuntime = null;
-        }
-        if (db) {
-          db.close();
-          db = null;
-        }
-      }
-
-      async function applyLatestGitHub() {
-        if (recording || starting || stopping || pendingChunks || updating) {
-          showMessage("更新できません",
-            "録音または保存処理が終わってから更新してください。");
-          return;
-        }
-        updating = true;
-        updateControls();
-        try {
-          if (location.protocol !== "https:") {
-            throw new Error("動的更新はHTTPS上で実行してください。");
-          }
-          // 配置先リポジトリのデフォルトブランチを取得する。
-          const repository = await fetchFresh(
-            `https://api.github.com/repos/${REPOSITORY}`, true);
-          const branch = repository.default_branch || REPOSITORY_BRANCH;
-          const commit = await fetchFresh(
-            `https://api.github.com/repos/${REPOSITORY}/commits/`
-            + encodeURIComponent(branch), true);
-          const sha = commit.sha;
-          if (typeof sha !== "string" || !/^[a-f0-9]{40}$/i.test(sha)) {
-            throw new Error("GitHubのコミットSHAを確認できません。");
-          }
-          const latestHtml = await fetchFresh(
-            `https://raw.githubusercontent.com/${REPOSITORY}/${sha}/`
-            + REPOSITORY_FILE);
-
-          const parsed = new DOMParser()
-            .parseFromString(latestHtml, "text/html");
-          const scripts = Array.from(parsed.querySelectorAll("script"));
-          if (scripts.length !== 1 || scripts[0].src
-              || !scripts[0].textContent.includes(BUILD_MARKER)) {
-            throw new Error(
-              "更新先は今回の正本実装と互換性がありません。旧版または別構成のため適用しません。");
-          }
-          if (frozenShell(parsed) !== expectedShell) {
-            throw new Error(
-              "更新先のHTML・CSSが正本と異なります。UIフリーズを守るため適用しません。");
-          }
-          if (parsed.querySelector(
-            "iframe,object,embed,link[rel='stylesheet'],meta[http-equiv='refresh']")) {
-            throw new Error("更新HTMLに未許可の外部依存があります。");
-          }
-
-          const versionMatch = scripts[0].textContent.match(
-            /\bconst\s+APP_VERSION\s*=\s*["']([^"']+)["']/);
-          const targetVersion = versionMatch ? versionMatch[1] : "不明";
-          const unchanged =
-            scripts[0].textContent === document.querySelector("script").textContent;
-          if (unchanged) {
-            showMessage("最新版を確認",
-              `${APP_VERSION} は最新コミット ${sha.slice(0, 12)} と同じコードです。`);
-            return;
-          }
-          if (!window.confirm(
-            `GitHub最新コミット ${sha.slice(0, 12)} の`
-            + ` ${targetVersion} を適用しますか？\n`
-            + "記録データはIndexedDBに残します。")) {
-            return;
-          }
-          const restoredUrl = new URL(location.href);
-          restoredUrl.searchParams.set("_somnolog_commit", sha);
-          restoredUrl.searchParams.set("_somnolog_cb", String(Date.now()));
-          history.replaceState(null, "", restoredUrl.href);
-          await disposeForUpdate();
-          // 同じHTTPSオリジンの文書を差し替えるため、IndexedDBの所在は変えない。
-          // ここで実行するのは利用者が指定した公開リポジトリのコードのみ。
-          document.open();
-          document.write(latestHtml);
-          document.close();
-        } catch (error) {
-          if (disposed) {
-            window.alert(`${errorText(error)} ページを再読み込みしてください。`);
-          } else {
-            showMessage("更新を適用できません",
-              `${errorText(error)} 現在のコードを維持しました。`);
-          }
-        } finally {
-          updating = false;
-          if (!disposed) updateControls();
-        }
-      }
-
-      async function reloadWithoutCache() {
-        if (recording || starting || stopping || pendingChunks || updating) {
-          showMessage("再読み込みできません",
-            "録音・保存処理が終わってから操作してください。");
-          return;
-        }
-        updating = true;
-        updateControls();
-        try {
-          await disposeForUpdate();
-          location.replace(cacheBusted(location.href));
-        } catch (error) {
-          window.alert(errorText(error));
-        }
-      }
-
-      // 正本に更新ボタンを追加せず、既存見出しを更新操作の入口に使う。
-      el("capture-heading").title =
-        `${APP_VERSION}／タップでGitHub最新版取得またはキャッシュ回避再読み込み`;
-      el("capture-heading").addEventListener("click", () => {
-        if (recording || starting || stopping || updating) {
-          showMessage("更新できません", "記録終了後に操作してください。");
-          return;
-        }
-        if (window.confirm(
-          `${APP_VERSION}\nGitHubの最新コミットから最新版を取得しますか？`)) {
-          void applyLatestGitHub();
-        } else if (window.confirm(
-          "キャッシュを回避して公開ページを再読み込みしますか？")) {
-          void reloadWithoutCache();
-        }
-      });
-
-      el("microphone-permission").addEventListener("click", () => {
-        if (!ownsRuntime || recording || starting || updating) return;
-        let resumed;
-        try {
-          resumed = ensureAudioContextFromGesture();
-        } catch (error) {
-          showMessage("AudioContextを起動できません", errorText(error));
-          return;
-        }
-        void requestMicrophone(resumed);
-      });
-
-      el("motion-permission").addEventListener("click", () => {
-        if (!ownsRuntime || recording || starting || updating) return;
-        let permission;
-        try {
-          const eventType = window.DeviceMotionEvent;
-          permission = eventType && typeof eventType.requestPermission === "function"
-            ? eventType.requestPermission()
-            : Promise.resolve(eventType ? "granted" : "unavailable");
-        } catch (error) {
-          showMessage("モーション権限を取得できません", errorText(error));
-          return;
-        }
-        void requestMotion(permission);
-      });
-
-      el("start").addEventListener("click", () => {
-        let resumed;
-        try {
-          resumed = ensureAudioContextFromGesture();
-        } catch (error) {
-          showMessage("記録を開始できません", errorText(error));
-          return;
-        }
-        void beginRecording(resumed);
-      });
-
-      el("stop-button").addEventListener("click", () => {
-        void stopRecording();
-      });
-      el("history-button").addEventListener("click", () => {
-        if (!recording && !starting && !stopping) {
-          openCalendar("capture-screen");
-        }
-      });
-      el("capture-help-button").addEventListener("click", () => {
-        el("usage-dialog").showModal();
-      });
-      el("black-button").addEventListener("click", () => {
-        if (!recording || stopping) return;
-        updateClock();
-        el("black-screen").hidden = false;
-        document.body.style.overflow = "hidden";
-        setClockState("dim");
-        clearTimeout(clockHideTimer);
-        el("black-screen").focus();
-      });
-      el("black-screen").addEventListener("click", event => {
-        if (event.target.closest("#black-back")) return;
-        wakeClock();
-      });
-      el("black-screen").addEventListener("keydown", event => {
-        if (event.target !== el("black-screen")) return;
-        if (event.key === "Enter" || event.key === " ") {
-          event.preventDefault();
-          wakeClock();
-        }
-        if (event.key === "Escape") {
-          event.preventDefault();
-          leaveBlackScreen();
-        }
-      });
-      el("black-back").addEventListener("click", event => {
-        event.stopPropagation();
-        leaveBlackScreen();
-      });
-      clockTimer = setInterval(() => {
-        if (!el("black-screen").hidden) updateClock();
-      }, 1000);
-
-      el("record-back").addEventListener("click", () =>
-        showScreen("capture-screen"));
-      el("calendar-button").addEventListener("click", () =>
-        openCalendar("record-screen"));
-      el("calendar-back").addEventListener("click", () =>
-        showScreen(calendarReturnScreen));
-      el("save-button").addEventListener("click", () => {
-        if (!currentSession) return;
-        el("save-dialog").showModal();
-      });
-      el("save-calendar").addEventListener("click", async () => {
-        if (!currentSession || !db) return;
-        el("save-calendar").disabled = true;
-        try {
-          const stored = await getRecord("sessions", currentSession.sessionId);
-          if (!stored) throw new Error("対象セッションが見つかりません。");
-          stored.calendarSaved = true;
-          await putSession(stored);
-          renderSummary(stored);
-          selected = sessionDate(stored);
-          const date = new Date(stored.recording.startEpochMs);
-          month = new Date(date.getFullYear(), date.getMonth(), 1);
-          mode = "single";
-          await refreshRecords();
-          openCalendar("record-screen");
-          showMessage("カレンダーに保存",
-            "セッションと録音チャンクを端末内のIndexedDBへ保存しました。"
-            + "ブラウザデータの削除やストレージの退避・消去で失われる可能性があります。");
-        } catch (error) {
-          showMessage("カレンダー登録に失敗", errorText(error));
-        } finally {
-          el("save-calendar").disabled = false;
-        }
-      });
-      el("share-current").addEventListener("click", () => {
-        showMessage("音声付きデータの共有は未実装",
-          "Phase 4でzip-store-v1の生成を実装します。"
-          + "この版では共有用ファイルを作成しません。");
-      });
-      el("single-mode").addEventListener("click", () => {
-        mode = "single";
-        render();
-      });
-      el("range-mode").addEventListener("click", () => {
-        mode = "range";
-        render();
-      });
-      el("reset-range").addEventListener("click", () => {
-        rangeStart = null;
-        rangeEnd = null;
-        render();
-      });
-      el("prev-month").addEventListener("click", () => {
-        month = new Date(month.getFullYear(), month.getMonth() - 1, 1);
-        renderCalendar();
-      });
-      el("next-month").addEventListener("click", () => {
-        month = new Date(month.getFullYear(), month.getMonth() + 1, 1);
-        renderCalendar();
-      });
-      el("share-button").addEventListener("click", openShare);
-      el("zip-save").addEventListener("click", () => {
-        el("share-status").textContent =
-          "Phase 4未実装。ZIPファイルは作成していません。";
-      });
-      el("clinic-button").addEventListener("click", () => {
-        el("share-status").textContent =
-          "窓口連携は未実装です。患者IDや状態は変更していません。";
-      });
-      document.querySelectorAll("[data-help]").forEach(button => {
-        button.addEventListener("click", () => {
-          showMessage("記録・履歴の使い方",
-            "開始時にマイクとモーションを許可し、記録開始を押します。"
-            + "停止後、保存・共有からカレンダーに登録できます。"
-            + "Phase 2では音声保存と中断回復を検証します。"
-            + "検出時間・実測メーター・波形はPhase 3、ZIPはPhase 4です。"
-            + "更新は開始画面のSomnoLog見出しをタップしてください。");
-        });
-      });
-
-      function onVisibilityChange() {
-        if (document.visibilityState === "visible") {
-          if (recording) void acquireWakeLock();
-          if (!ownsRuntime && !disposed && db) {
-            acquireRuntime().catch(error =>
-              showMessage("使用権の取得失敗", errorText(error)));
-          }
-        } else if (recording && recorder && recorder.state === "recording") {
-          try { recorder.requestData(); }
-          catch (error) { emergencyStop(error); }
-        }
-      }
-      document.addEventListener("visibilitychange", onVisibilityChange);
-
-      window.addEventListener("beforeunload", event => {
-        if (recording || starting || stopping || pendingChunks) {
-          event.preventDefault();
-          event.returnValue = "";
-        }
-      });
-      window.addEventListener("pagehide", () => {
-        // ページ終了時の非同期保存は保証しない。
-        // 正常終了の印を付けず、次回起動時に保存済み範囲を回復する。
-        clearInterval(leaseTimer);
-        clearTimeout(retryTimer);
-        if (recording && recorder && recorder.state === "recording") {
-          try { recorder.requestData(); } catch (_) {}
-        }
-      });
-      window.addEventListener("pageshow", event => {
-        if (!event.persisted || disposed) return;
-        if (ownsRuntime) {
-          clearInterval(leaseTimer);
-          leaseTimer = setInterval(renewLease, 3000);
-          void renewLease();
-        } else if (db) {
-          acquireRuntime().catch(error =>
-            showMessage("復帰時の初期化失敗", errorText(error)));
-        }
-      });
-
-      async function initialize() {
-        // 正本内の固定サンプル文言は、既存DOMの内容だけ更新する。
-        const calendarNote = el("calendar-screen")
-          .querySelector("section[aria-labelledby='selected-heading'] > p.note");
-        if (calendarNote) {
-          calendarNote.textContent =
-            "※端末内に保存した実記録を表示します。波形はPhase 3未実装。"
-            + "記録開始時刻は実際の入眠時刻を示すものではありません。";
-        }
-        el("share-dialog").querySelector("p.note").textContent =
-          "※この版ではZIP作成・保存・送信を行いません。Phase 4で実装します。";
-        el("share-dialog").querySelector("ul").replaceChildren();
-        for (const text of [
-          "manifest.json：記録条件とファイル参照",
-          "log.json：時系列ログ（Phase 3で取得）",
-          "README.txt：記録条件の概要",
-          "audio/：録音データ",
-          "複数記録はsessions/配下に分割（Phase 4で実装）"
-        ]) {
-          const item = document.createElement("li");
-          item.textContent = text;
-          el("share-dialog").querySelector("ul").append(item);
-        }
-        renderSummary(null);
-        render();
-        updateControls();
-
-        try {
-          if (!window.isSecureContext) {
-            throw new Error("HTTPSで配信してSafariまたはChromeから開いてください。");
-          }
-          if (!window.indexedDB) {
-            throw new Error("IndexedDBが利用できません。");
-          }
-          db = await openDatabase();
-          await acquireRuntime();
-          await refreshRecords();
-          updateControls();
-          if (!ownsRuntime) {
-            showMessage("別タブで使用中",
-              "他のSomnoLogタブを閉じてください。使用権取得後に記録操作が有効になります。");
-          }
-          console.info("SomnoLog initialized", {
-            appVersion: APP_VERSION,
-            buildMarker: BUILD_MARKER,
-            phase: 2,
-            ownsRuntime
-          });
-        } catch (error) {
-          updateControls();
-          showMessage("初期化できません", errorText(error));
-        }
-      }
-
-      void initialize();
-    })();
-    </script>
+
+(() => {
+"use strict";
+
+const APP_VERSION = "v20261009-03";
+const BUILD_MARKER = "SOMNOLOG_FROZEN_UI_PHASE2";
+const REPOSITORY = "matsuodentalassociation/sleep_track";
+const REPOSITORY_BRANCH = "main";
+const REPOSITORY_FILE = "index.html";
+const DB_NAME = "SomnoLog";
+const DB_VERSION = 1;
+const CHUNK_INTERVAL_MS = 30000;
+const REQUESTED_SAMPLE_RATE = 22050;
+const REQUESTED_BITRATE = 32000;
+const LEASE_KEY = "__somnolog_runtime_lease__";
+const LEASE_MS = 15000;
+const el = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, "0");
+const ownerId = crypto.randomUUID
+? crypto.randomUUID()
+: Array.from(crypto.getRandomValues(new Uint32Array(4)))
+.map(n => n.toString(16)).join("-");
+const sessionSuffix = () =>
+Array.from(crypto.getRandomValues(new Uint8Array(6)))
+.map(n => n.toString(16).padStart(2, "0")).join("");
+
+// DOMが実測値や状態で変わる前に、更新互換性確認用の正本を保持する。
+function frozenShell(doc) {
+const copy = doc.documentElement.cloneNode(true);
+copy.querySelectorAll("script").forEach(node => node.remove());
+const walker = doc.createTreeWalker(copy, NodeFilter.SHOW_COMMENT);
+const comments = [];
+while (walker.nextNode()) comments.push(walker.currentNode);
+comments.forEach(node => node.remove());
+return copy.outerHTML;
+}
+const expectedShell = frozenShell(document);
+
+let db = null;
+let disposed = false;
+let ownsRuntime = false;
+let releasingRuntime = null;
+let leaseTimer = null;
+let retryTimer = null;
+let heartbeatTimer = null;
+let chunkTimer = null;
+let clockTimer = null;
+let clockHideTimer = null;
+let wakeLock = null;
+let stream = null;
+let audioContext = null;
+let ready = { microphone: false, motion: false };
+let motionListenerInstalled = false;
+let lastMotionEvent = null;
+let motionWaiter = null;
+let recording = false;
+let starting = false;
+let stopping = false;
+let updating = false;
+let activeSession = null;
+let currentSession = null;
+let recorder = null;
+let recorderStopPromise = null;
+let recorderStopResolve = null;
+let recordingStartMono = 0;
+let lastChunkEventOffset = 0;
+let sequence = 0;
+let pendingChunks = 0;
+let saveChain = Promise.resolve();
+let recordingFault = null;
+let records = [];
+let calendarReturnScreen = "capture-screen";
+const initialDate = new Date();
+const dateKey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+const todayKey = () => {
+const n = new Date();
+return dateKey(n.getFullYear(), n.getMonth(), n.getDate());
+};
+let month = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
+let mode = "single";
+let selected = todayKey();
+let rangeStart = null;
+let rangeEnd = null;
+
+
+// v03: 実入力メーター。検出時間集計・ログ保存は別工程。
+let meterSource = null;
+let meterAnalyser = null;
+let meterSink = null;
+let meterSamples = null;
+let meterTimer = null;
+let motionPermissionGranted = false;
+let motionMono = null;
+let motionValueG = null;
+let gravityEstimate = null;
+let gravityStartedMono = null;
+let motionMethod = "";
+const motionHistory = Array(80).fill(null);
+const microphoneLabel = el("microphone-wave")
+.closest(".signal").querySelector(".label");
+const motionLabel = el("motion-wave")
+.closest(".signal").querySelector(".label");
+
+function missingMeter(kind, message) {
+const label = kind === "microphone" ? microphoneLabel : motionLabel;
+const name = kind === "microphone" ? "マイク" : "体動";
+label.textContent = name + " — " + message;
+el(kind + "-wave").setAttribute("aria-label", name + "：" + message);
+el(kind + "-path").setAttribute("d", "");
+}
+
+function disconnectMicrophoneMeter() {
+for (const node of [meterSource, meterAnalyser, meterSink]) {
+if (node) { try { node.disconnect(); } catch (_) {} }
+}
+meterSource = meterAnalyser = meterSink = meterSamples = null;
+missingMeter("microphone", "入力なし／未許可");
+}
+
+function connectMicrophoneMeter() {
+disconnectMicrophoneMeter();
+if (!stream || !audioContext || audioContext.state === "closed") {
+throw new Error("マイク解析の接続先がありません。");
+}
+meterSource = audioContext.createMediaStreamSource(stream);
+meterAnalyser = audioContext.createAnalyser();
+meterAnalyser.fftSize = 2048;
+meterAnalyser.smoothingTimeConstant = 0;
+meterSamples = new Float32Array(meterAnalyser.fftSize);
+meterSink = audioContext.createGain();
+meterSink.gain.value = 0;
+meterSource.connect(meterAnalyser);
+meterAnalyser.connect(meterSink);
+// 無音出力でグラフを駆動。マイク音をスピーカーへ返さない。
+meterSink.connect(audioContext.destination);
+startMeterTimer();
+}
+
+function microphoneInputAvailable() {
+const track = stream && stream.getAudioTracks()[0];
+return Boolean(track && track.readyState === "live" && !track.muted
+&& meterAnalyser && audioContext && audioContext.state === "running");
+}
+
+function motionInputAvailable() {
+return Boolean(motionPermissionGranted && motionMono !== null
+&& performance.now() - motionMono < 2000
+&& Number.isFinite(motionValueG));
+}
+
+function finiteVector(value) {
+return Boolean(value &&
+[value.x, value.y, value.z].every(Number.isFinite));
+}
+
+function paintMicrophoneMeter() {
+if (!microphoneInputAvailable()) {
+const track = stream && stream.getAudioTracks()[0];
+const message = !track || track.readyState !== "live" ? "入力なし／未許可"
+: track.muted ? "入力途絶"
+: audioContext && audioContext.state !== "running"
+? "音声処理停止・マイクを再許可" : "解析未接続";
+missingMeter("microphone", message);
+return;
+}
+meterAnalyser.getFloatTimeDomainData(meterSamples);
+let energy = 0;
+for (const sample of meterSamples) {
+if (!Number.isFinite(sample)) {
+missingMeter("microphone", "解析値取得不能");
+return;
+}
+energy += sample * sample;
+}
+const rms = Math.sqrt(energy / meterSamples.length);
+const description = rms === 0
+? "デジタル無音・入力正常性は未判定"
+: (20 * Math.log10(rms)).toFixed(1) + " dBFS";
+microphoneLabel.textContent = "マイク — " + description;
+el("microphone-wave").setAttribute("aria-label",
+"マイク実波形：" + description +
+"。表示倍率8倍。校正された音圧値ではありません。");
+const points = [];
+for (let i = 0; i < 160; i++) {
+const sample = meterSamples[Math.floor(i * meterSamples.length / 160)];
+const y = 36 - Math.max(-1, Math.min(1, sample * 8)) * 30;
+points.push((i ? "L" : "M") + (i * 320 / 159).toFixed(1)
++ " " + y.toFixed(1));
+}
+el("microphone-path").setAttribute("d", points.join(" "));
+}
+
+function paintMotionMeter() {
+const fresh = motionMono !== null &&
+performance.now() - motionMono < 2000;
+if (!motionPermissionGranted || !fresh || !Number.isFinite(motionValueG)) {
+motionHistory.fill(null);
+missingMeter("motion", !motionPermissionGranted ? "未許可／入力なし"
+: !fresh ? "入力途絶・取得不能" : "重力推定中");
+return;
+}
+motionHistory.shift();
+motionHistory.push(motionValueG);
+const description = motionValueG.toFixed(3) + " g（" + motionMethod + "）";
+motionLabel.textContent = "体動 — " + description;
+el("motion-wave").setAttribute("aria-label",
+"端末の動的加速度：" + description + "。表示上限0.25 g、直近約4秒。");
+const points = [];
+let connected = false;
+motionHistory.forEach((value, i) => {
+if (!Number.isFinite(value)) { connected = false; return; }
+const x = i * 320 / (motionHistory.length - 1);
+const y = 36 - Math.min(1, Math.max(0, value) / 0.25) * 30;
+points.push((connected ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1));
+connected = true;
+});
+el("motion-path").setAttribute("d", points.join(" "));
+}
+
+function startMeterTimer() {
+if (meterTimer !== null || disposed) return;
+meterTimer = setInterval(() => {
+if (disposed || document.visibilityState !== "visible") return;
+try { paintMicrophoneMeter(); }
+catch (error) { missingMeter("microphone", "解析失敗：" + error.name); }
+paintMotionMeter();
+updateControls();
+}, 50);
+}
+
+function stopMeterTimer() {
+clearInterval(meterTimer);
+meterTimer = null;
+}
+
+function errorText(error) {
+if (!error) return "原因不明";
+return `${error.name || "Error"}: ${error.message || String(error)}`;
+}
+
+function closeDialogs() {
+document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close());
+}
+
+function showMessage(title, text) {
+if (disposed) return;
+closeDialogs();
+el("message-title").textContent = title;
+el("message-body").textContent = text;
+el("message").showModal();
+}
+
+function previewMessage(title, text) {
+closeDialogs();
+el("preview-title").textContent = title;
+el("preview-dialog").querySelector("p").textContent = text;
+el("preview-dialog").showModal();
+}
+
+function showScreen(id) {
+closeDialogs();
+clearTimeout(clockHideTimer);
+el("black-screen").hidden = true;
+document.body.style.overflow = "";
+["capture-screen", "record-screen", "calendar-screen"]
+.forEach(name => { el(name).hidden = name !== id; });
+window.scrollTo(0, 0);
+const heading = id === "capture-screen" ? "capture-heading"
+: id === "record-screen" ? "result-heading" : "calendar-heading";
+el(heading).focus();
+}
+
+function setDuration(node, ms) {
+node.replaceChildren();
+if (!Number.isFinite(ms)) {
+node.textContent = "取得できず";
+return;
+}
+const total = Math.max(0, Math.round(ms / 1000));
+const units = [
+[Math.floor(total / 3600), "時間"],
+[Math.floor(total % 3600 / 60), "分"],
+[total % 60, "秒"]
+];
+units.forEach(([number, unit]) => {
+node.append(document.createTextNode(String(number)));
+const small = document.createElement("small");
+small.textContent = unit;
+node.append(small);
+});
+}
+
+function datetime(ms) {
+if (!Number.isFinite(ms)) return "取得できず";
+const d = new Date(ms);
+return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} `
++ `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function isoLocal(ms) {
+const d = new Date(ms);
+const offset = -d.getTimezoneOffset();
+const sign = offset >= 0 ? "+" : "-";
+const absolute = Math.abs(offset);
+return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
++ `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
++ `.${String(d.getMilliseconds()).padStart(3, "0")}`
++ `${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
+}
+
+function sessionDate(session) {
+const d = new Date(session.recording.startEpochMs);
+return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function rangeText(session) {
+if (!session) return "記録なし";
+return `${datetime(session.recording.startEpochMs)} → `
++ `${datetime(session.recording.endEpochMs)}`;
+}
+
+function renderSummary(session) {
+currentSession = session || null;
+el("result-range").textContent = rangeText(session);
+el("save-range").textContent = rangeText(session);
+el("save-button").disabled = !session;
+if (!session) {
+el("result-year").textContent = "記録なし";
+el("result-time-detail").textContent = "端末内に完了記録はありません。";
+setDuration(el("result-duration"), null);
+setDuration(el("sound-duration"), null);
+setDuration(el("motion-duration"), null);
+return;
+}
+const date = new Date(session.recording.startEpochMs);
+el("result-year").textContent =
+`${date.getFullYear()}年の記録／${session.appVersion}`;
+setDuration(el("result-duration"), session.recording.totalDurationMs);
+setDuration(el("sound-duration"), session.metrics.soundDetectedMs);
+setDuration(el("motion-duration"), session.metrics.motionDetectedMs);
+el("record-screen").querySelector(".badge").textContent =
+session.state === "recovered" ? "中断回復" : "記録終了";
+const mib = (session.audioBytes / 1048576).toFixed(2);
+el("result-time-detail").textContent =
+`${session.audioChunkCount}チャンク／音声 ${mib} MiB／`
++ `音・体動集計はPhase 3未実装。`
++ (session.state === "recovered"
+? "終了日時は最後に保存済みのチャンク境界です。未保存区間は不明。"
+: "")
++ (session.fault ? ` 異常：${session.fault}` : "");
+el("save-status").textContent = session.calendarSaved
+? "カレンダー登録済み。音声とセッションは端末内に保存されています。"
+: "音声とセッションは端末内に保存済み。カレンダーへの登録は下のボタンで行います。";
+}
+
+function updateControls() {
+const busy = starting || stopping || updating || disposed;
+const liveTrack = microphoneInputAvailable();
+ready.motion = motionInputAvailable();
+ready.microphone = Boolean(liveTrack);
+el("start").disabled = busy || recording || !db || !ownsRuntime
+|| !ready.microphone || !ready.motion;
+el("stop-button").disabled = !recording || stopping;
+el("black-button").disabled = !recording || stopping;
+el("history-button").disabled = recording || busy || !db;
+el("microphone-permission").disabled = recording || busy || !ownsRuntime;
+el("motion-permission").disabled = recording || busy || !ownsRuntime;
+el("microphone-permission").hidden = ready.microphone;
+el("motion-permission").hidden = ready.motion;
+}
+
+function openDatabase() {
+return new Promise((resolve, reject) => {
+const request = indexedDB.open(DB_NAME, DB_VERSION);
+request.onupgradeneeded = () => {
+const database = request.result;
+if (!database.objectStoreNames.contains("sessions")) {
+database.createObjectStore("sessions", { keyPath: "sessionId" });
+}
+for (const name of ["sessionLogs", "profileBins", "clips", "audioChunks"]) {
+if (!database.objectStoreNames.contains(name)) {
+const store = database.createObjectStore(name, { keyPath: "id" });
+store.createIndex("sessionId", "sessionId", { unique: false });
+}
+}
+};
+request.onblocked = () => {
+showMessage("保存領域の更新待ち",
+"旧版を開いている別タブを閉じてください。IndexedDBを更新できません。");
+};
+request.onerror = () => reject(request.error);
+request.onsuccess = () => {
+const database = request.result;
+const required = [
+"sessions", "sessionLogs", "profileBins", "clips", "audioChunks"
+];
+if (!required.every(name => database.objectStoreNames.contains(name))) {
+database.close();
+reject(new Error("既存IndexedDBのストア構成が正本仕様と異なります。削除せず停止しました。"));
+return;
+}
+database.onversionchange = () => {
+if (recording) emergencyStop(new Error("IndexedDBのバージョンが変更されました。"));
+database.close();
+db = null;
+updateControls();
+};
+resolve(database);
+};
+});
+}
+
+function transaction(names, mode, run) {
+return new Promise((resolve, reject) => {
+if (!db) {
+reject(new Error("IndexedDBが利用できません。"));
+return;
+}
+let result;
+let tx;
+try {
+tx = db.transaction(names, mode);
+tx.oncomplete = () => resolve(result);
+tx.onerror = () => reject(tx.error || new Error("保存トランザクション失敗"));
+tx.onabort = () => reject(tx.error || new Error("保存トランザクション中断"));
+run(tx, value => { result = value; });
+} catch (error) {
+if (tx) {
+try { tx.abort(); } catch (_) {}
+}
+reject(error);
+}
+});
+}
+
+function getRecord(store, key) {
+return transaction([store], "readonly", (tx, setResult) => {
+const request = tx.objectStore(store).get(key);
+request.onsuccess = () => setResult(request.result);
+});
+}
+
+function getSessions() {
+return transaction(["sessions"], "readonly", (tx, setResult) => {
+const request = tx.objectStore("sessions").getAll();
+request.onsuccess = () => setResult(request.result);
+});
+}
+
+function putSession(session) {
+return transaction(["sessions"], "readwrite", tx => {
+tx.objectStore("sessions").put(session);
+});
+}
+
+async function patientId() {
+const registered = await getRecord("clips", "somnolog_patient_id");
+if (registered) {
+const value = registered.patientId || registered.value;
+if (typeof value === "string" && value.trim()) return value.trim();
+}
+try {
+const stored = localStorage.getItem("somnolog_patient_id");
+if (stored && stored.trim()) return stored.trim();
+} catch (_) {}
+return "UNREGISTERED";
+}
+
+function claimLease() {
+return transaction(["clips"], "readwrite", (tx, setResult) => {
+const store = tx.objectStore("clips");
+const request = store.get(LEASE_KEY);
+request.onsuccess = () => {
+const previous = request.result;
+const now = Date.now();
+if (previous && previous.owner !== ownerId && previous.expiresAt > now) {
+setResult(false);
+return;
+}
+store.put({ id: LEASE_KEY, owner: ownerId, expiresAt: now + LEASE_MS });
+setResult(true);
+};
+});
+}
+
+async function renewLease() {
+if (!db || !ownsRuntime || disposed) return;
+try {
+const renewed = await claimLease();
+if (!renewed) {
+ownsRuntime = false;
+updateControls();
+emergencyStop(new Error("別タブが保存領域の使用権を取得しました。"));
+}
+} catch (error) {
+ownsRuntime = false;
+updateControls();
+emergencyStop(error);
+}
+}
+
+async function releaseLease() {
+if (!db) return;
+await transaction(["clips"], "readwrite", tx => {
+const store = tx.objectStore("clips");
+const request = store.get(LEASE_KEY);
+request.onsuccess = () => {
+if (request.result && request.result.owner === ownerId) {
+store.delete(LEASE_KEY);
+}
+};
+});
+}
+
+async function acquireRuntime() {
+if (disposed || !db || ownsRuntime) return;
+const tryAcquire = async () => {
+const success = await claimLease();
+if (!success) return false;
+ownsRuntime = true;
+clearInterval(leaseTimer);
+leaseTimer = setInterval(renewLease, 3000);
+await recoverSessions();
+await refreshRecords();
+updateControls();
+return true;
+};
+
+if (navigator.locks && navigator.locks.request) {
+await new Promise((resolve, reject) => {
+let resolved = false;
+navigator.locks.request(
+"somnolog-recording-runtime",
+{ mode: "exclusive", ifAvailable: true },
+async lock => {
+if (!lock) {
+resolved = true;
+resolve(false);
+return;
+}
+try {
+const success = await tryAcquire();
+if (!success) {
+resolved = true;
+resolve(false);
+return;
+}
+resolved = true;
+resolve(true);
+await new Promise(done => { releasingRuntime = done; });
+} catch (error) {
+if (!resolved) reject(error);
+else console.error(error);
+}
+}
+).catch(reject);
+});
+} else {
+await tryAcquire();
+}
+
+if (!ownsRuntime && !disposed) {
+updateControls();
+clearTimeout(retryTimer);
+retryTimer = setTimeout(() => {
+acquireRuntime().catch(error => showMessage("初期化失敗", errorText(error)));
+}, 3000);
+}
+}
+
+async function recoverSessions() {
+const sessions = await getSessions();
+let recoveredCount = 0;
+for (const session of sessions) {
+if (session.state !== "recording") continue;
+// 使用権を取れた後だけ回復する。別タブの録音を完了扱いにしない。
+const end = Number.isFinite(session.lastPersistedEpochMs)
+? session.lastPersistedEpochMs : session.recording.startEpochMs;
+session.state = "recovered";
+session.calendarSaved = true;
+session.recording.endEpochMs = end;
+session.recording.endTime = isoLocal(end);
+session.recording.totalDurationMs =
+Math.max(0, end - session.recording.startEpochMs);
+session.metrics.dataStatus = "has_missing";
+session.recovery = {
+recoveredAt: Date.now(),
+endTimeBasis: "last_persisted_chunk_boundary",
+unsavedTailDurationMs: null,
+audioFinalized: false
+};
+session.fault = session.fault || "前回の記録が正常終了していません。未保存区間は不明。";
+await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
+tx.objectStore("sessions").put(session);
+tx.objectStore("sessionLogs").put({
+id: `${session.sessionId}:recovery:${Date.now()}`,
+sessionId: session.sessionId,
+kind: "lifecycle",
+timestamp: Date.now(),
+event: "recovered",
+status: "missing",
+detail: "保存済みデータのみ回復。音声コンテナの完結・再生は未保証。"
+});
+});
+recoveredCount++;
+}
+if (recoveredCount) {
+showMessage("未完了記録を回復",
+`${recoveredCount}件を保存済みチャンクの境界まで回復しました。`
++ "未保存区間は補完していません。音声再生の可否は未確認です。");
+}
+}
+
+function ensureAudioContextFromGesture() {
+const Constructor = window.AudioContext || window.webkitAudioContext;
+if (!Constructor) throw new Error("AudioContextに対応していません。");
+if (!audioContext || audioContext.state === "closed") {
+try {
+audioContext = new Constructor({ sampleRate: REQUESTED_SAMPLE_RATE });
+} catch (_) {
+audioContext = new Constructor();
+}
+}
+// タップ直下で呼ぶ。ここより前にawaitを置かない。
+const resumed = audioContext.resume();
+return resumed || Promise.resolve();
+}
+
+function installTrackEvents(mediaStream) {
+mediaStream.getAudioTracks().forEach(track => {
+track.addEventListener("ended", () => {
+ready.microphone = false;
+updateControls();
+if (recording) emergencyStop(new Error("マイク入力が終了しました。"));
+});
+track.addEventListener("mute", () => {
+if (recording) emergencyStop(new Error("マイク入力が途絶しました。欠測として停止します。"));
+});
+});
+}
+
+async function requestMicrophone(resumePromise) {
+try {
+await resumePromise;
+if (!window.isSecureContext || !navigator.mediaDevices
+|| !navigator.mediaDevices.getUserMedia) {
+throw new Error("HTTPS上でマイク対応ブラウザから開いてください。");
+}
+disconnectMicrophoneMeter();
+if (stream) stream.getTracks().forEach(track => track.stop());
+stream = await navigator.mediaDevices.getUserMedia({
+audio: {
+channelCount: { ideal: 1 },
+sampleRate: { ideal: REQUESTED_SAMPLE_RATE },
+echoCancellation: false,
+noiseSuppression: false,
+autoGainControl: false
+},
+video: false
+});
+installTrackEvents(stream);
+connectMicrophoneMeter();
+ready.microphone = true;
+updateControls();
+const settings = stream.getAudioTracks()[0].getSettings();
+previewMessage("マイク許可済み",
+`実入力：${settings.sampleRate || "不明"} Hz／`
++ `${settings.channelCount || "不明"}チャンネル。`
++ "録音時は32kbpsを要求しますが、エンコード後の実値は別途検証が必要です。"
++ "実波形とdBFSを表示します。dBFSは校正された音圧値ではありません。100ms集計は未実装です。");
+} catch (error) {
+ready.microphone = false;
+updateControls();
+disconnectMicrophoneMeter();
+if (stream) stream.getTracks().forEach(track => track.stop());
+stream = null;
+updateControls();
+showMessage("マイクを利用できません", errorText(error));
+}
+}
+
+function onMotion(event) {
+const now = performance.now();
+const previous = motionMono;
+const gap = previous === null || now - previous > 2000;
+if (finiteVector(event.acceleration)) {
+const a = event.acceleration;
+motionValueG = Math.hypot(a.x, a.y, a.z) / 9.80665;
+gravityEstimate = null;
+gravityStartedMono = null;
+motionMethod = "重力除去済み入力";
+} else if (finiteVector(event.accelerationIncludingGravity)) {
+const a = event.accelerationIncludingGravity;
+const values = [a.x, a.y, a.z];
+if (!gravityEstimate || gap) {
+gravityEstimate = values.slice();
+gravityStartedMono = now;
+}
+const dt = previous === null ? 0 : (now - previous) / 1000;
+const alpha = 1 - Math.exp(-Math.max(0, Math.min(dt, 2)) / 0.8);
+gravityEstimate = gravityEstimate.map(
+(value, i) => value + alpha * (values[i] - value));
+motionValueG = now - gravityStartedMono < 800 ? null :
+Math.hypot(...values.map(
+(value, i) => value - gravityEstimate[i])) / 9.80665;
+motionMethod = "重力推定除去";
+} else {
+return;
+}
+motionMono = now;
+lastMotionEvent = Date.now();
+if (motionWaiter) {
+const done = motionWaiter;
+motionWaiter = null;
+done();
+}
+}
+
+function waitForMotion(timeoutMs) {
+return new Promise((resolve, reject) => {
+if (lastMotionEvent && Date.now() - lastMotionEvent < 2000) {
+resolve();
+return;
+}
+const timer = setTimeout(() => {
+motionWaiter = null;
+reject(new Error("モーションの実入力を取得できません。端末設定とブラウザ対応を確認してください。"));
+}, timeoutMs);
+motionWaiter = () => {
+clearTimeout(timer);
+resolve();
+};
+});
+}
+
+async function requestMotion(permissionPromise) {
+try {
+if (!window.DeviceMotionEvent) {
+throw new Error("DeviceMotionEventに対応していません。");
+}
+const permission = await permissionPromise;
+if (permission !== "granted") throw new Error("モーション権限が許可されていません。");
+if (!motionListenerInstalled) {
+window.addEventListener("devicemotion", onMotion);
+motionListenerInstalled = true;
+}
+await waitForMotion(7000);
+motionPermissionGranted = true;
+startMeterTimer();
+ready.motion = motionInputAvailable();
+updateControls();
+previewMessage("モーション入力確認済み",
+"端末の動的加速度を表示します。重力推定時は約0.8秒待機します。身体の動きの直接測定ではありません。100ms集計は未実装です。");
+} catch (error) {
+ready.motion = false;
+updateControls();
+motionPermissionGranted = false;
+updateControls();
+showMessage("モーションを利用できません", errorText(error));
+}
+}
+
+function selectMimeType() {
+if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) {
+throw new Error("MediaRecorderに対応していません。");
+}
+const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
+|| (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const mp4 = ["audio/mp4", "audio/mp4;codecs=mp4a.40.2"];
+const webm = ["audio/webm;codecs=opus", "audio/webm"];
+const candidates = isIOS ? [...mp4, ...webm] : [...webm, ...mp4];
+const selectedType = candidates.find(type => MediaRecorder.isTypeSupported(type));
+if (!selectedType) {
+throw new Error("指定のMP4/AACまたはWebM形式に対応していません。");
+}
+return selectedType;
+}
+
+function elapsedNow() {
+return Math.max(0, Math.round(performance.now() - recordingStartMono));
+}
+
+async function acquireWakeLock() {
+if (!recording || document.visibilityState !== "visible"
+|| !navigator.wakeLock) return;
+try {
+if (wakeLock && !wakeLock.released) return;
+wakeLock = await navigator.wakeLock.request("screen");
+wakeLock.addEventListener("release", () => { wakeLock = null; });
+} catch (error) {
+console.warn("画面点灯維持を取得できません:", error);
+}
+}
+
+async function releaseWakeLock() {
+const lock = wakeLock;
+wakeLock = null;
+if (lock && !lock.released) {
+try { await lock.release(); } catch (_) {}
+}
+}
+
+function enqueueAudio(blob, eventOffset) {
+if (!activeSession || !blob || !blob.size) return;
+const session = activeSession;
+const seq = ++sequence;
+const previousOffset = lastChunkEventOffset;
+lastChunkEventOffset = eventOffset;
+pendingChunks++;
+if (pendingChunks > 3) {
+emergencyStop(new Error("音声の保存が録音速度に追いつきません。メモリ増大防止のため停止します。"));
+}
+
+saveChain = saveChain.then(async () => {
+let bytes = null;
+try {
+bytes = await blob.arrayBuffer();
+const id = `${session.sessionId}:${String(seq).padStart(8, "0")}`;
+const chunk = {
+id,
+sessionId: session.sessionId,
+sequence: seq,
+mimeType: recorder ? recorder.mimeType : session.audioConfig.mimeType,
+startOffsetMs: previousOffset,
+endOffsetMs: eventOffset,
+durationMs: Math.max(0, eventOffset - previousOffset),
+offsetBasis: "dataavailable_callback_monotonic_time",
+isIndependentMediaFile: null,
+byteLength: bytes.byteLength,
+data: bytes
+};
+const next = structuredClone(session);
+next.audioBytes += bytes.byteLength;
+next.audioChunkCount++;
+next.lastPersistedOffsetMs = eventOffset;
+next.lastPersistedEpochMs =
+next.recording.startEpochMs + eventOffset;
+next.heartbeatEpochMs = Date.now();
+await transaction(["audioChunks", "sessions"], "readwrite", tx => {
+tx.objectStore("audioChunks").add(chunk);
+tx.objectStore("sessions").put(next);
+});
+Object.assign(session, next);
+} catch (error) {
+recordingFault = recordingFault || errorText(error);
+emergencyStop(error);
+} finally {
+// オブジェクトURLを作らないためrevoke対象はない。
+// 逐次書込み完了後にArrayBufferとBlobを保持しない。
+bytes = null;
+pendingChunks--;
+}
+});
+}
+
+async function beginRecording(resumePromise) {
+if (recording || starting || stopping || updating || !ownsRuntime) return;
+starting = true;
+updateControls();
+let sessionWritten = false;
+try {
+await resumePromise;
+if (!await claimLease()) throw new Error("別タブで使用中です。");
+if (!stream || !stream.getAudioTracks().some(t => t.readyState === "live")) {
+throw new Error("マイクを再度許可してください。");
+}
+if (!microphoneInputAvailable()) throw new Error("マイクの実入力を確認してください。");
+if (!motionInputAvailable()) throw new Error("モーションの実入力を確認してください。");
+const mimeType = selectMimeType();
+const settings = stream.getAudioTracks()[0].getSettings();
+const startEpochMs = Date.now();
+const startDate = new Date(startEpochMs);
+const sessionId = `sess_${startDate.getFullYear()}`
++ `${pad(startDate.getMonth() + 1)}${pad(startDate.getDate())}_`
++ `${pad(startDate.getHours())}${pad(startDate.getMinutes())}`
++ `${pad(startDate.getSeconds())}_${sessionSuffix()}`;
+const identifier = await patientId();
+recorder = new MediaRecorder(stream, {
+mimeType,
+audioBitsPerSecond: REQUESTED_BITRATE
+});
+activeSession = {
+formatVersion: "zip-store-v1",
+appVersion: APP_VERSION,
+implementationPhase: 2,
+sessionId,
+patientId: identifier,
+state: "recording",
+calendarSaved: false,
+owner: ownerId,
+recording: {
+startTime: isoLocal(startEpochMs),
+endTime: null,
+startEpochMs,
+endEpochMs: null,
+totalDurationMs: null
+},
+metrics: {
+baselineDbFS: null,
+soundThresholdDb: 10,
+motionThresholdG: 0.05,
+soundDetectedMs: null,
+motionDetectedMs: null,
+dataStatus: "unobtainable"
+},
+audioConfig: {
+mimeType: recorder.mimeType || mimeType,
+sampleRate: null,
+channels: null,
+bitrate: recorder.audioBitsPerSecond || null
+},
+audioDiagnostics: {
+requestedSampleRate: REQUESTED_SAMPLE_RATE,
+requestedChannels: 1,
+requestedBitrate: REQUESTED_BITRATE,
+inputSampleRate: settings.sampleRate || null,
+inputChannels: settings.channelCount || null,
+audioContextSampleRate: audioContext.sampleRate,
+encodedSampleRateVerified: false,
+encodedChannelsVerified: false,
+chunkPlaybackVerified: false
+},
+audioFiles: [],
+audioBytes: 0,
+audioChunkCount: 0,
+lastPersistedEpochMs: startEpochMs,
+lastPersistedOffsetMs: 0,
+heartbeatEpochMs: startEpochMs,
+audioFinalized: false,
+fault: null
+};
+await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
+tx.objectStore("sessions").add(activeSession);
+tx.objectStore("sessionLogs").add({
+id: `${sessionId}:start`,
+sessionId,
+kind: "lifecycle",
+timestamp: startEpochMs,
+event: "start_requested",
+detail: "Phase 2。センシングログは未取得。"
+});
+});
+sessionWritten = true;
+recordingFault = null;
+sequence = 0;
+pendingChunks = 0;
+saveChain = Promise.resolve();
+lastChunkEventOffset = 0;
+recorderStopPromise = new Promise(resolve => {
+recorderStopResolve = resolve;
+});
+recorder.addEventListener("dataavailable", event => {
+enqueueAudio(event.data, elapsedNow());
+});
+recorder.addEventListener("error", event => {
+emergencyStop(event.error || new Error("MediaRecorderのエラー"));
+});
+recorder.addEventListener("stop", () => {
+if (recorderStopResolve) recorderStopResolve();
+if (recording && !stopping) {
+emergencyStop(new Error("録音が予期せず終了しました。"));
+}
+});
+// 全ブラウザ共通でtimesliceを渡さない。
+recordingStartMono = performance.now();
+recorder.start();
+recording = true;
+starting = false;
+chunkTimer = setInterval(() => {
+if (!recorder || recorder.state !== "recording" || stopping) return;
+try { recorder.requestData(); } catch (error) { emergencyStop(error); }
+}, CHUNK_INTERVAL_MS);
+heartbeatTimer = setInterval(() => {
+if (!activeSession || !recording || stopping) return;
+saveChain = saveChain.then(async () => {
+activeSession.heartbeatEpochMs = Date.now();
+try { await putSession(activeSession); }
+catch (error) { emergencyStop(error); }
+});
+}, 5000);
+updateControls();
+await acquireWakeLock();
+previewMessage("記録開始 — Phase 2",
+"実際の圧縮音声を約30秒ごとに端末内へ保存します。"
++ "実測メーターは動作します。音・体動の検出時間集計は未実装です。"
++ "黒画面は画面ロックではありません。手動ロック・背景移行による継続は保証しません。");
+} catch (error) {
+recording = false;
+if (recorder && recorder.state !== "inactive") {
+try { recorder.stop(); } catch (_) {}
+}
+if (sessionWritten && activeSession) {
+activeSession.state = "recovered";
+activeSession.calendarSaved = true;
+activeSession.fault = errorText(error);
+activeSession.recording.endEpochMs =
+activeSession.lastPersistedEpochMs;
+activeSession.recording.endTime =
+isoLocal(activeSession.lastPersistedEpochMs);
+activeSession.recording.totalDurationMs = 0;
+activeSession.metrics.dataStatus = "has_missing";
+try { await putSession(activeSession); } catch (_) {}
+}
+activeSession = null;
+recorder = null;
+starting = false;
+updateControls();
+showMessage("記録開始に失敗", errorText(error));
+}
+}
+
+function emergencyStop(error) {
+recordingFault = recordingFault || errorText(error);
+if (!recording || stopping) return;
+// 保存キューの内部から呼ばれても、同じキューを再帰的に待たない。
+queueMicrotask(() => {
+if (recording && !stopping) {
+stopRecording().catch(failure => {
+showMessage("停止処理に失敗", errorText(failure));
+});
+}
+});
+}
+
+async function stopRecording() {
+if (!recording || stopping) return;
+stopping = true;
+clearInterval(chunkTimer);
+clearInterval(heartbeatTimer);
+updateControls();
+const session = activeSession;
+const stopOffset = elapsedNow();
+const userStopEpochMs = session.recording.startEpochMs + stopOffset;
+try {
+if (recorder && recorder.state !== "inactive") recorder.stop();
+if (recorderStopPromise) {
+let timer;
+try {
+await Promise.race([
+recorderStopPromise,
+new Promise((_, reject) => {
+timer = setTimeout(() => reject(
+new Error("MediaRecorderの最終データ待ちが30秒を超えました。")
+), 30000);
+})
+]);
+} finally {
+clearTimeout(timer);
+}
+}
+// stopイベントに先行する最後のdataavailableを含めて保存完了を待つ。
+await saveChain;
+session.state = recordingFault ? "recovered" : "completed";
+session.calendarSaved = Boolean(recordingFault);
+session.fault = recordingFault;
+session.audioFinalized = !recordingFault;
+const end = recordingFault
+? session.lastPersistedEpochMs : userStopEpochMs;
+session.recording.endEpochMs = end;
+session.recording.endTime = isoLocal(end);
+session.recording.totalDurationMs =
+Math.max(0, end - session.recording.startEpochMs);
+if (recordingFault) session.metrics.dataStatus = "has_missing";
+await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
+tx.objectStore("sessions").put(session);
+tx.objectStore("sessionLogs").put({
+id: `${session.sessionId}:stop`,
+sessionId: session.sessionId,
+kind: "lifecycle",
+timestamp: Date.now(),
+event: recordingFault ? "stopped_with_error" : "stopped",
+detail: recordingFault || "最終音声データの保存完了"
+});
+});
+renderSummary(session);
+await refreshRecords();
+showScreen("record-screen");
+if (recordingFault) {
+showMessage("記録を保存済み範囲まで回復",
+`${recordingFault} 未保存区間は補完していません。`);
+}
+} catch (error) {
+recordingFault = recordingFault || errorText(error);
+// 完了書込みに失敗した場合、DB上のrecording状態を残して
+// 次回起動時の回復対象とする。
+showMessage("停止・保存処理に失敗",
+`${errorText(error)} 次回起動時に保存済み範囲の回復を試みます。`);
+} finally {
+recording = false;
+starting = false;
+stopping = false;
+clearInterval(chunkTimer);
+clearInterval(heartbeatTimer);
+await releaseWakeLock();
+if (stream) {
+stream.getTracks().forEach(track => track.stop());
+stream = null;
+}
+disconnectMicrophoneMeter();
+ready.microphone = false;
+activeSession = null;
+recorder = null;
+recorderStopPromise = null;
+recorderStopResolve = null;
+updateControls();
+}
+}
+
+function fullLabel(key) {
+const [year, monthNumber, day] = key.split("-").map(Number);
+return `${year}年${monthNumber}月${day}日`;
+}
+
+function periodLabel(first, last) {
+return first === last
+? fullLabel(first)
+: `${fullLabel(first)}〜${fullLabel(last)}`;
+}
+
+function bounds() {
+return mode === "single"
+? [selected, selected]
+: [rangeStart, rangeEnd];
+}
+
+function visibleRecords() {
+const [first, last] = bounds();
+if (!first || !last) return [];
+return records
+.filter(session => {
+const key = sessionDate(session);
+return key >= first && key <= last;
+})
+.sort((a, b) =>
+a.recording.startEpochMs - b.recording.startEpochMs);
+}
+
+async function refreshRecords() {
+if (!db) return;
+const all = await getSessions();
+records = all.filter(session =>
+(session.state === "completed" || session.state === "recovered")
+&& session.calendarSaved
+&& session.recording
+&& Number.isFinite(session.recording.startEpochMs));
+render();
+
+if (!currentSession) {
+const latest = all
+.filter(session =>
+(session.state === "completed" || session.state === "recovered")
+&& session.recording
+&& Number.isFinite(session.recording.startEpochMs))
+.sort((a, b) =>
+b.recording.startEpochMs - a.recording.startEpochMs)[0];
+renderSummary(latest || null);
+}
+}
+
+function chooseDate(key) {
+if (mode === "single") {
+selected = key;
+} else if (!rangeStart || rangeEnd) {
+rangeStart = key;
+rangeEnd = null;
+} else {
+rangeEnd = key;
+if (rangeEnd < rangeStart) {
+[rangeStart, rangeEnd] = [rangeEnd, rangeStart];
+}
+}
+render();
+const button = Array.from(el("days").children)
+.find(node => node.dataset && node.dataset.date === key);
+if (button) button.focus();
+}
+
+function renderCalendar() {
+const year = month.getFullYear();
+const monthIndex = month.getMonth();
+el("month-title").textContent = `${year}年${monthIndex + 1}月`;
+el("single-mode").classList.toggle("active", mode === "single");
+el("range-mode").classList.toggle("active", mode === "range");
+el("single-mode").setAttribute(
+"aria-pressed", String(mode === "single"));
+el("range-mode").setAttribute(
+"aria-pressed", String(mode === "range"));
+el("selection-hint").textContent = mode === "single"
+? "確認したい日付を選んでください。"
+: !rangeStart
+? "① 開始日を選んでください。"
+: !rangeEnd
+? "② 終了日を選んでください。"
+: "期間を選択しました。別の日付を押すと選び直せます。";
+el("range-tools").hidden = mode !== "range";
+el("range-label").textContent = !rangeStart
+? "期間未選択"
+: !rangeEnd
+? `開始日：${fullLabel(rangeStart)}`
+: periodLabel(rangeStart, rangeEnd);
+
+const grid = el("days");
+grid.replaceChildren();
+const firstWeekday = new Date(year, monthIndex, 1).getDay();
+for (let i = 0; i < firstWeekday; i++) {
+const blank = document.createElement("span");
+blank.setAttribute("aria-hidden", "true");
+grid.append(blank);
+}
+const count = new Date(year, monthIndex + 1, 0).getDate();
+for (let day = 1; day <= count; day++) {
+const key = dateKey(year, monthIndex, day);
+const weekday = new Date(year, monthIndex, day).getDay();
+const hasData = records.some(session => sessionDate(session) === key);
+const edge = mode === "single"
+? key === selected
+: key === rangeStart || key === rangeEnd;
+const inside = Boolean(mode === "range" && rangeStart && rangeEnd
+&& key >= rangeStart && key <= rangeEnd);
+const button = document.createElement("button");
+button.type = "button";
+button.className = "day"
++ (weekday === 0 ? " sun" : weekday === 6 ? " sat" : "")
++ (key === todayKey() ? " today" : "")
++ (inside ? " in-range" : "")
++ (edge ? " selected" : "");
+button.dataset.date = key;
+button.setAttribute("aria-pressed", String(edge || inside));
+button.setAttribute("aria-label",
+`${fullLabel(key)}、保存記録${hasData ? "あり" : "なし"}`
++ (key === todayKey() ? "、今日" : ""));
+const number = document.createElement("span");
+number.textContent = String(day);
+const dot = document.createElement("span");
+dot.className = "dot" + (hasData ? "" : " empty");
+dot.setAttribute("aria-hidden", "true");
+button.append(number, dot);
+button.addEventListener("click", () => chooseDate(key));
+grid.append(button);
+}
+}
+
+function renderRecords() {
+const [first, last] = bounds();
+const matched = visibleRecords();
+const complete = Boolean(first && last);
+const list = el("record-list");
+list.replaceChildren();
+el("selected-heading").textContent = complete
+? `${periodLabel(first, last)}の記録（${matched.length}件）`
+: "表示する期間を選択してください";
+el("share-button").disabled = !complete || !matched.length;
+
+if (!complete || !matched.length) {
+const empty = document.createElement("div");
+empty.className = "empty-state";
+empty.textContent = complete
+? "保存記録はありません。"
+: "カレンダーで開始日と終了日を選んでください。";
+list.append(empty);
+return;
+}
+
+matched.forEach(session => {
+const card = document.createElement("article");
+card.className = "card";
+card.dataset.recordId = session.sessionId;
+
+const saved = document.createElement("span");
+saved.className = "saved";
+saved.dataset.role = "saved-status";
+saved.textContent = session.state === "recovered"
+? "✓ 保存済み／中断回復データ"
+: "✓ カレンダーに保存済み";
+
+const time = document.createElement("p");
+time.className = "card-time";
+time.dataset.role = "record-range";
+time.textContent = rangeText(session);
+
+const duration = document.createElement("div");
+duration.className = "duration";
+const label = document.createElement("span");
+label.className = "label";
+label.textContent = "記録時間";
+const value = document.createElement("span");
+value.className = "value";
+value.dataset.role = "record-duration";
+setDuration(value, session.recording.totalDurationMs);
+duration.append(label, value);
+
+const figure = document.createElement("figure");
+figure.className = "timeline";
+const header = document.createElement("div");
+header.className = "timeline-header";
+const caption = document.createElement("figcaption");
+caption.className = "timeline-title";
+caption.textContent = "記録タイムライン";
+const phase = document.createElement("span");
+phase.className = "sample";
+phase.textContent = "Phase 3未実装";
+header.append(caption, phase);
+
+const chart = document.createElement("div");
+chart.className = "chart";
+chart.dataset.role = "timeline-chart";
+chart.textContent =
+"実測波形・音／体動の検出時間は未取得。サンプル値は表示しません。";
+
+const endpoints = document.createElement("div");
+endpoints.className = "endpoints";
+for (const [title, timestamp] of [
+["記録開始", session.recording.startEpochMs],
+["記録停止", session.recording.endEpochMs]
+]) {
+const item = document.createElement("div");
+item.append(document.createTextNode(title));
+const strong = document.createElement("strong");
+strong.textContent = datetime(timestamp);
+item.append(strong);
+endpoints.append(item);
+}
+figure.append(header, chart, endpoints);
+
+const note = document.createElement("p");
+note.className = "note";
+note.textContent =
+`音声：${session.audioChunkCount}チャンク／`
++ `${(session.audioBytes / 1048576).toFixed(2)} MiB。`
++ "チャンクの単独再生・エクスポート互換性は未検証。";
+card.append(saved, time, duration, figure, note);
+list.append(card);
+});
+}
+
+function render() {
+renderCalendar();
+renderRecords();
+}
+
+function openCalendar(from) {
+calendarReturnScreen = from;
+el("calendar-back").textContent = from === "capture-screen"
+? "記録画面に戻る" : "記録終了画面に戻る";
+render();
+showScreen("calendar-screen");
+}
+
+function openShare() {
+const [first, last] = bounds();
+const matched = visibleRecords();
+if (!first || !last || !matched.length) return;
+el("zip-period").textContent = periodLabel(first, last);
+el("zip-count").textContent = `対象：${matched.length}件の睡眠記録`;
+el("zip-name").textContent =
+`SomnoLog_${first}${first === last ? "" : `_${last}`}.zip`;
+el("share-status").textContent =
+"ZIP生成はPhase 4で実装します。今回はファイルを生成しません。";
+el("share-dialog").showModal();
+}
+
+function updateClock() {
+const d = new Date();
+const text = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+el("black-clock").textContent = text;
+el("black-clock").dateTime = text;
+}
+
+function setClockState(state) {
+el("black-screen").dataset.clockState = state;
+el("black-back").disabled = state === "off";
+el("black-screen").setAttribute("aria-label", state === "off"
+? "黒画面。タップまたはEnterで時計と戻るボタンを表示"
+: "時計表示。タップで明るく表示。戻るボタンで記録画面に復帰");
+if (state === "off" && document.activeElement === el("black-back")) {
+el("black-screen").focus();
+}
+}
+
+function wakeClock() {
+updateClock();
+setClockState("bright");
+clearTimeout(clockHideTimer);
+clockHideTimer = setTimeout(() => setClockState("off"), 3000);
+}
+
+function leaveBlackScreen() {
+clearTimeout(clockHideTimer);
+el("black-screen").hidden = true;
+document.body.style.overflow = "";
+el("black-button").focus();
+}
+
+function cacheBusted(url) {
+const target = new URL(url, location.href);
+target.searchParams.set("_somnolog_cb",
+`${Date.now()}-${sessionSuffix()}`);
+return target.href;
+}
+
+async function fetchFresh(url, json = false) {
+const controller = new AbortController();
+const timer = setTimeout(() => controller.abort(), 20000);
+try {
+const response = await fetch(cacheBusted(url), {
+cache: "no-store",
+credentials: "omit",
+redirect: "follow",
+signal: controller.signal,
+headers: {
+Accept: json ? "application/vnd.github+json" : "text/html"
+}
+});
+if (!response.ok) {
+throw new Error(`更新取得失敗：HTTP ${response.status}`);
+}
+return json ? await response.json() : await response.text();
+} finally {
+clearTimeout(timer);
+}
+}
+
+async function disposeForUpdate() {
+if (recording || starting || stopping || pendingChunks) {
+throw new Error("録音・保存処理中は更新できません。");
+}
+disposed = true;
+stopMeterTimer();
+disconnectMicrophoneMeter();
+clearInterval(leaseTimer);
+clearInterval(clockTimer);
+clearInterval(chunkTimer);
+clearInterval(heartbeatTimer);
+clearTimeout(retryTimer);
+clearTimeout(clockHideTimer);
+if (motionListenerInstalled) {
+window.removeEventListener("devicemotion", onMotion);
+}
+if (stream) {
+stream.getTracks().forEach(track => track.stop());
+stream = null;
+}
+await releaseWakeLock();
+if (audioContext && audioContext.state !== "closed") {
+try { await audioContext.close(); } catch (_) {}
+}
+try { await releaseLease(); } catch (_) {}
+ownsRuntime = false;
+if (releasingRuntime) {
+releasingRuntime();
+releasingRuntime = null;
+}
+if (db) {
+db.close();
+db = null;
+}
+}
+
+async function applyLatestGitHub() {
+if (recording || starting || stopping || pendingChunks || updating) {
+showMessage("更新できません",
+"録音または保存処理が終わってから更新してください。");
+return;
+}
+updating = true;
+updateControls();
+try {
+if (location.protocol !== "https:") {
+throw new Error("動的更新はHTTPS上で実行してください。");
+}
+// 配置先リポジトリのデフォルトブランチを取得する。
+const repository = await fetchFresh(
+`https://api.github.com/repos/${REPOSITORY}`, true);
+const branch = repository.default_branch || REPOSITORY_BRANCH;
+const commit = await fetchFresh(
+`https://api.github.com/repos/${REPOSITORY}/commits/`
++ encodeURIComponent(branch), true);
+const sha = commit.sha;
+if (typeof sha !== "string" || !/^[a-f0-9]{40}$/i.test(sha)) {
+throw new Error("GitHubのコミットSHAを確認できません。");
+}
+const latestHtml = await fetchFresh(
+`https://raw.githubusercontent.com/${REPOSITORY}/${sha}/`
++ REPOSITORY_FILE);
+
+const parsed = new DOMParser()
+.parseFromString(latestHtml, "text/html");
+const scripts = Array.from(parsed.querySelectorAll("script"));
+if (scripts.length !== 1 || scripts[0].src
+|| !scripts[0].textContent.includes(BUILD_MARKER)) {
+throw new Error(
+"更新先は今回の正本実装と互換性がありません。旧版または別構成のため適用しません。");
+}
+if (frozenShell(parsed) !== expectedShell) {
+throw new Error(
+"更新先のHTML・CSSが正本と異なります。UIフリーズを守るため適用しません。");
+}
+if (parsed.querySelector(
+"iframe,object,embed,link[rel='stylesheet'],meta[http-equiv='refresh']")) {
+throw new Error("更新HTMLに未許可の外部依存があります。");
+}
+
+const versionMatch = scripts[0].textContent.match(
+/\bconst\s+APP_VERSION\s*=\s*["']([^"']+)["']/);
+const targetVersion = versionMatch ? versionMatch[1] : "不明";
+const unchanged =
+scripts[0].textContent === document.querySelector("script").textContent;
+if (unchanged) {
+showMessage("最新版を確認",
+`${APP_VERSION} は最新コミット ${sha.slice(0, 12)} と同じコードです。`);
+return;
+}
+if (!window.confirm(
+`GitHub最新コミット ${sha.slice(0, 12)} の`
++ ` ${targetVersion} を適用しますか？\n`
++ "記録データはIndexedDBに残します。")) {
+return;
+}
+const restoredUrl = new URL(location.href);
+restoredUrl.searchParams.set("_somnolog_commit", sha);
+restoredUrl.searchParams.set("_somnolog_cb", String(Date.now()));
+history.replaceState(null, "", restoredUrl.href);
+await disposeForUpdate();
+// 同じHTTPSオリジンの文書を差し替えるため、IndexedDBの所在は変えない。
+// ここで実行するのは利用者が指定した公開リポジトリのコードのみ。
+document.open();
+document.write(latestHtml);
+document.close();
+} catch (error) {
+if (disposed) {
+window.alert(`${errorText(error)} ページを再読み込みしてください。`);
+} else {
+showMessage("更新を適用できません",
+`${errorText(error)} 現在のコードを維持しました。`);
+}
+} finally {
+updating = false;
+if (!disposed) updateControls();
+}
+}
+
+async function reloadWithoutCache() {
+if (recording || starting || stopping || pendingChunks || updating) {
+showMessage("再読み込みできません",
+"録音・保存処理が終わってから操作してください。");
+return;
+}
+updating = true;
+updateControls();
+try {
+await disposeForUpdate();
+location.replace(cacheBusted(location.href));
+} catch (error) {
+window.alert(errorText(error));
+}
+}
+
+// 正本に更新ボタンを追加せず、既存見出しを更新操作の入口に使う。
+el("capture-heading").title =
+`${APP_VERSION}／タップでGitHub最新版取得またはキャッシュ回避再読み込み`;
+el("capture-heading").addEventListener("click", () => {
+if (recording || starting || stopping || updating) {
+showMessage("更新できません", "記録終了後に操作してください。");
+return;
+}
+if (window.confirm(
+`${APP_VERSION}\nGitHubの最新コミットから最新版を取得しますか？`)) {
+void applyLatestGitHub();
+} else if (window.confirm(
+"キャッシュを回避して公開ページを再読み込みしますか？")) {
+void reloadWithoutCache();
+}
+});
+
+el("microphone-permission").addEventListener("click", () => {
+if (!ownsRuntime || recording || starting || updating) return;
+let resumed;
+try {
+resumed = ensureAudioContextFromGesture();
+} catch (error) {
+showMessage("AudioContextを起動できません", errorText(error));
+return;
+}
+void requestMicrophone(resumed);
+});
+
+el("motion-permission").addEventListener("click", () => {
+if (!ownsRuntime || recording || starting || updating) return;
+let permission;
+try {
+const eventType = window.DeviceMotionEvent;
+permission = eventType && typeof eventType.requestPermission === "function"
+? eventType.requestPermission()
+: Promise.resolve(eventType ? "granted" : "unavailable");
+} catch (error) {
+showMessage("モーション権限を取得できません", errorText(error));
+return;
+}
+void requestMotion(permission);
+});
+
+el("start").addEventListener("click", () => {
+let resumed;
+try {
+resumed = ensureAudioContextFromGesture();
+} catch (error) {
+showMessage("記録を開始できません", errorText(error));
+return;
+}
+void beginRecording(resumed);
+});
+
+el("stop-button").addEventListener("click", () => {
+void stopRecording();
+});
+el("history-button").addEventListener("click", () => {
+if (!recording && !starting && !stopping) {
+openCalendar("capture-screen");
+}
+});
+el("capture-help-button").addEventListener("click", () => {
+el("usage-dialog").showModal();
+});
+el("black-button").addEventListener("click", () => {
+if (!recording || stopping) return;
+updateClock();
+el("black-screen").hidden = false;
+document.body.style.overflow = "hidden";
+setClockState("dim");
+clearTimeout(clockHideTimer);
+el("black-screen").focus();
+});
+el("black-screen").addEventListener("click", event => {
+if (event.target.closest("#black-back")) return;
+wakeClock();
+});
+el("black-screen").addEventListener("keydown", event => {
+if (event.target !== el("black-screen")) return;
+if (event.key === "Enter" || event.key === " ") {
+event.preventDefault();
+wakeClock();
+}
+if (event.key === "Escape") {
+event.preventDefault();
+leaveBlackScreen();
+}
+});
+el("black-back").addEventListener("click", event => {
+event.stopPropagation();
+leaveBlackScreen();
+});
+clockTimer = setInterval(() => {
+if (!el("black-screen").hidden) updateClock();
+}, 1000);
+
+el("record-back").addEventListener("click", () =>
+showScreen("capture-screen"));
+el("calendar-button").addEventListener("click", () =>
+openCalendar("record-screen"));
+el("calendar-back").addEventListener("click", () =>
+showScreen(calendarReturnScreen));
+el("save-button").addEventListener("click", () => {
+if (!currentSession) return;
+el("save-dialog").showModal();
+});
+el("save-calendar").addEventListener("click", async () => {
+if (!currentSession || !db) return;
+el("save-calendar").disabled = true;
+try {
+const stored = await getRecord("sessions", currentSession.sessionId);
+if (!stored) throw new Error("対象セッションが見つかりません。");
+stored.calendarSaved = true;
+await putSession(stored);
+renderSummary(stored);
+selected = sessionDate(stored);
+const date = new Date(stored.recording.startEpochMs);
+month = new Date(date.getFullYear(), date.getMonth(), 1);
+mode = "single";
+await refreshRecords();
+openCalendar("record-screen");
+showMessage("カレンダーに保存",
+"セッションと録音チャンクを端末内のIndexedDBへ保存しました。"
++ "ブラウザデータの削除やストレージの退避・消去で失われる可能性があります。");
+} catch (error) {
+showMessage("カレンダー登録に失敗", errorText(error));
+} finally {
+el("save-calendar").disabled = false;
+}
+});
+el("share-current").addEventListener("click", () => {
+showMessage("音声付きデータの共有は未実装",
+"Phase 4でzip-store-v1の生成を実装します。"
++ "この版では共有用ファイルを作成しません。");
+});
+el("single-mode").addEventListener("click", () => {
+mode = "single";
+render();
+});
+el("range-mode").addEventListener("click", () => {
+mode = "range";
+render();
+});
+el("reset-range").addEventListener("click", () => {
+rangeStart = null;
+rangeEnd = null;
+render();
+});
+el("prev-month").addEventListener("click", () => {
+month = new Date(month.getFullYear(), month.getMonth() - 1, 1);
+renderCalendar();
+});
+el("next-month").addEventListener("click", () => {
+month = new Date(month.getFullYear(), month.getMonth() + 1, 1);
+renderCalendar();
+});
+el("share-button").addEventListener("click", openShare);
+el("zip-save").addEventListener("click", () => {
+el("share-status").textContent =
+"Phase 4未実装。ZIPファイルは作成していません。";
+});
+el("clinic-button").addEventListener("click", () => {
+el("share-status").textContent =
+"窓口連携は未実装です。患者IDや状態は変更していません。";
+});
+document.querySelectorAll("[data-help]").forEach(button => {
+button.addEventListener("click", () => {
+showMessage("記録・履歴の使い方",
+"開始時にマイクとモーションを許可し、記録開始を押します。"
++ "停止後、保存・共有からカレンダーに登録できます。"
++ "Phase 2では音声保存と中断回復を検証します。"
++ "実測メーターを利用できます。検出時間・保存波形はPhase 3、ZIPはPhase 4です。"
++ "更新は開始画面のSomnoLog見出しをタップしてください。");
+});
+});
+
+function onVisibilityChange() {
+if (document.visibilityState === "visible") {
+if (recording) void acquireWakeLock();
+if (!ownsRuntime && !disposed && db) {
+acquireRuntime().catch(error =>
+showMessage("使用権の取得失敗", errorText(error)));
+}
+} else if (recording && recorder && recorder.state === "recording") {
+try { recorder.requestData(); }
+catch (error) { emergencyStop(error); }
+}
+}
+document.addEventListener("visibilitychange", onVisibilityChange);
+
+window.addEventListener("beforeunload", event => {
+if (recording || starting || stopping || pendingChunks) {
+event.preventDefault();
+event.returnValue = "";
+}
+});
+window.addEventListener("pagehide", () => {
+stopMeterTimer();
+// ページ終了時の非同期保存は保証しない。
+// 正常終了の印を付けず、次回起動時に保存済み範囲を回復する。
+clearInterval(leaseTimer);
+clearTimeout(retryTimer);
+if (recording && recorder && recorder.state === "recording") {
+try { recorder.requestData(); } catch (_) {}
+}
+});
+window.addEventListener("pageshow", event => {
+if (!disposed) startMeterTimer();
+if (!event.persisted || disposed) return;
+if (ownsRuntime) {
+clearInterval(leaseTimer);
+leaseTimer = setInterval(renewLease, 3000);
+void renewLease();
+} else if (db) {
+acquireRuntime().catch(error =>
+showMessage("復帰時の初期化失敗", errorText(error)));
+}
+});
+
+async function initialize() {
+// 正本内の固定サンプル文言は、既存DOMの内容だけ更新する。
+const calendarNote = el("calendar-screen")
+.querySelector("section[aria-labelledby='selected-heading'] > p.note");
+if (calendarNote) {
+calendarNote.textContent =
+"※端末内に保存した実記録を表示します。波形はPhase 3未実装。"
++ "記録開始時刻は実際の入眠時刻を示すものではありません。";
+}
+el("share-dialog").querySelector("p.note").textContent =
+"※この版ではZIP作成・保存・送信を行いません。Phase 4で実装します。";
+el("share-dialog").querySelector("ul").replaceChildren();
+for (const text of [
+"manifest.json：記録条件とファイル参照",
+"log.json：時系列ログ（Phase 3で取得）",
+"README.txt：記録条件の概要",
+"audio/：録音データ",
+"複数記録はsessions/配下に分割（Phase 4で実装）"
+]) {
+const item = document.createElement("li");
+item.textContent = text;
+el("share-dialog").querySelector("ul").append(item);
+}
+renderSummary(null);
+render();
+updateControls();
+
+try {
+if (!window.isSecureContext) {
+throw new Error("HTTPSで配信してSafariまたはChromeから開いてください。");
+}
+if (!window.indexedDB) {
+throw new Error("IndexedDBが利用できません。");
+}
+db = await openDatabase();
+await acquireRuntime();
+await refreshRecords();
+updateControls();
+if (!ownsRuntime) {
+showMessage("別タブで使用中",
+"他のSomnoLogタブを閉じてください。使用権取得後に記録操作が有効になります。");
+}
+console.info("SomnoLog initialized", {
+appVersion: APP_VERSION,
+buildMarker: BUILD_MARKER,
+phase: 2,
+ownsRuntime
+});
+} catch (error) {
+updateControls();
+showMessage("初期化できません", errorText(error));
+}
+}
+
+startMeterTimer();
+void initialize();
+})();
+
+</script>
   </body>
   </html>
