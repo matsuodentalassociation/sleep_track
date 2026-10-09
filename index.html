@@ -299,10 +299,11 @@
   <script>
 
 
+
 (() => {
 "use strict";
 
-const APP_VERSION = "v20261009-03-ui01";
+const APP_VERSION = "v20261009-04";
 const BUILD_MARKER = "SOMNOLOG_FROZEN_UI_PHASE2";
 const REPOSITORY = "matsuodentalassociation/sleep_track";
 const REPOSITORY_BRANCH = "main";
@@ -559,9 +560,7 @@ el("preview-dialog").showModal();
 
 function showScreen(id) {
 closeDialogs();
-clearTimeout(clockHideTimer);
-el("black-screen").hidden = true;
-document.body.style.overflow = "";
+leaveBlackScreen(false);
 ["capture-screen", "record-screen", "calendar-screen"]
 .forEach(name => { el(name).hidden = name !== id; });
 window.scrollTo(0, 0);
@@ -661,7 +660,7 @@ ready.microphone = Boolean(liveTrack);
 el("start").disabled = busy || recording || !db || !ownsRuntime
 || !ready.microphone || !ready.motion;
 el("stop-button").disabled = !recording || stopping;
-el("black-button").disabled = !recording || stopping;
+el("btn-enter-black").disabled = !recording || stopping;
 el("history-button").disabled = recording || busy || !db;
 el("microphone-permission").disabled = recording || busy || !ownsRuntime;
 el("motion-permission").disabled = recording || busy || !ownsRuntime;
@@ -1659,36 +1658,397 @@ el("share-status").textContent =
 el("share-dialog").showModal();
 }
 
+// SOMNOLOG_SLEEP_MODE_V04
+let sleepActive = false;
+let sleepSavedStyle = null;
+let sleepThemeSaved = [];
+let sleepThemeCreated = null;
+let sleepFullscreenOwned = false;
+let sleepEpoch = 0;
+let sleepHoldTimer = null;
+let sleepPointer = null;
+let sleepKeyboard = null;
+let sleepSuppressUntil = 0;
+let sleepAwaitRelease = false;
+const sleepWarnings = new Map();
+
+function sleepNotice(key, message) {
+if (message) sleepWarnings.set(key,message);
+else sleepWarnings.delete(key);
+const text = Array.from(sleepWarnings.values()).join("／");
+const status = el("sleep-mode-status");
+const note = el("sleep-mode-note");
+if (status) {
+status.textContent = text;
+status.hidden = !text;
+}
+if (note) {
+note.textContent = text;
+note.hidden = !text;
+}
+}
+
 function updateClock() {
 const d = new Date();
-const text = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-el("black-clock").textContent = text;
-el("black-clock").dateTime = text;
+const text = pad(d.getHours()) + ":" + pad(d.getMinutes());
+el("clock-display").textContent = text;
+el("clock-display").dateTime = text;
 }
 
 function setClockState(state) {
-el("black-screen").dataset.clockState = state;
-el("black-back").disabled = state === "off";
-el("black-screen").setAttribute("aria-label", state === "off"
-? "黒画面。タップまたはEnterで時計と戻るボタンを表示"
-: "時計表示。タップで明るく表示。戻るボタンで記録画面に復帰");
-if (state === "off" && document.activeElement === el("black-back")) {
-el("black-screen").focus();
-}
+const bright = state === "bright";
+const clock = el("clock-display");
+clock.classList.toggle("clock-bright",bright);
+clock.classList.toggle("clock-dimmed",!bright);
+el("screen-black").dataset.clockState = bright ? "bright" : "dim";
 }
 
 function wakeClock() {
+if (!sleepActive) return;
 updateClock();
 setClockState("bright");
 clearTimeout(clockHideTimer);
-clockHideTimer = setTimeout(() => setClockState("off"), 3000);
+clockHideTimer = setTimeout(() => {
+if (sleepActive) setClockState("dim");
+},3000);
 }
 
-function leaveBlackScreen() {
+function cancelSleepHold() {
+clearTimeout(sleepHoldTimer);
+sleepHoldTimer = null;
+}
+
+function suppressSleepClick() {
+sleepSuppressUntil = performance.now() + 800;
+sleepAwaitRelease = true;
+}
+
+function leaveBlackScreen(focusButton = true) {
+if (!sleepActive) return;
+sleepActive = false;
+sleepEpoch++;
 clearTimeout(clockHideTimer);
-el("black-screen").hidden = true;
-document.body.style.overflow = "";
-el("black-button").focus();
+cancelSleepHold();
+sleepPointer = null;
+sleepKeyboard = null;
+const overlay = el("screen-black");
+overlay.classList.remove("active");
+overlay.hidden = true;
+if (sleepSavedStyle) {
+document.documentElement.style.backgroundColor = sleepSavedStyle.htmlBackground;
+document.body.style.backgroundColor = sleepSavedStyle.bodyBackground;
+document.documentElement.style.overflow = sleepSavedStyle.htmlOverflow;
+document.body.style.overflow = sleepSavedStyle.bodyOverflow;
+sleepSavedStyle = null;
+}
+for (const item of sleepThemeSaved) {
+if (item.content === null) item.node.removeAttribute("content");
+else item.node.setAttribute("content",item.content);
+}
+sleepThemeSaved = [];
+if (sleepThemeCreated) {
+sleepThemeCreated.remove();
+sleepThemeCreated = null;
+}
+if (sleepFullscreenOwned && document.fullscreenElement &&
+document.exitFullscreen) {
+Promise.resolve(document.exitFullscreen()).catch(error => {
+sleepNotice("fullscreen","全画面解除に失敗：" + error.name);
+});
+}
+sleepFullscreenOwned = false;
+if (focusButton) el("btn-enter-black").focus({preventScroll:true});
+// 録音・センサー・保存・Wake Lockは停止しない。
+}
+
+async function verifySleepWakeLock(epoch) {
+await acquireWakeLock();
+if (!sleepActive || epoch !== sleepEpoch || disposed) return;
+if (!navigator.wakeLock) {
+sleepNotice("wake","画面点灯維持API非対応：自動スリープに注意");
+} else if (!wakeLock || wakeLock.released) {
+sleepNotice("wake","画面点灯維持を取得できません：自動スリープに注意");
+} else {
+sleepNotice("wake","");
+}
+}
+
+function enterBlackScreen() {
+if (!recording || stopping || disposed || sleepActive) return;
+closeDialogs();
+sleepWarnings.clear();
+sleepNotice("fullscreen","");
+const epoch = ++sleepEpoch;
+sleepActive = true;
+sleepSavedStyle = {
+htmlBackground:document.documentElement.style.backgroundColor,
+bodyBackground:document.body.style.backgroundColor,
+htmlOverflow:document.documentElement.style.overflow,
+bodyOverflow:document.body.style.overflow
+};
+document.documentElement.style.backgroundColor = "#000000";
+document.body.style.backgroundColor = "#000000";
+document.documentElement.style.overflow = "hidden";
+document.body.style.overflow = "hidden";
+
+sleepThemeSaved = Array.from(
+document.querySelectorAll('meta[name="theme-color"]')
+).map(node => ({node,content:node.getAttribute("content")}));
+for (const item of sleepThemeSaved) item.node.setAttribute("content","#000000");
+if (!sleepThemeSaved.length) {
+sleepThemeCreated = document.createElement("meta");
+sleepThemeCreated.name = "theme-color";
+sleepThemeCreated.content = "#000000";
+document.head.append(sleepThemeCreated);
+}
+
+const overlay = el("screen-black");
+updateClock();
+setClockState("dim");
+clearTimeout(clockHideTimer);
+overlay.hidden = false;
+overlay.classList.add("active");
+overlay.focus({preventScroll:true});
+
+// ユーザーのタップ直下で要求する。ここより前にawaitを置かない。
+const root = document.documentElement;
+if (!document.fullscreenElement) {
+if (root.requestFullscreen) {
+try {
+const task = root.requestFullscreen({navigationUI:"hide"});
+Promise.resolve(task).then(() => {
+if (epoch !== sleepEpoch || !sleepActive) {
+if (document.fullscreenElement === root && document.exitFullscreen) {
+Promise.resolve(document.exitFullscreen()).catch(() => {});
+}
+return;
+}
+sleepFullscreenOwned = document.fullscreenElement === root;
+sleepNotice("fullscreen",sleepFullscreenOwned ? "" :
+"全画面未取得：上下の帯が残る場合があります");
+}).catch(error => {
+if (sleepActive && epoch === sleepEpoch) {
+sleepNotice("fullscreen","全画面取得失敗：" + error.name +
+"（上下の帯が残る場合があります）");
+}
+});
+} catch (error) {
+sleepNotice("fullscreen","全画面取得失敗：" + error.name);
+}
+} else {
+sleepNotice("fullscreen","全画面API非対応：上下の帯が残る場合があります");
+}
+}
+void verifySleepWakeLock(epoch).catch(error => {
+if (sleepActive && epoch === sleepEpoch) {
+sleepNotice("wake","画面点灯維持の確認失敗：" + error.name);
+}
+});
+}
+
+function installSleepMode() {
+const overlay = el("black-screen");
+const clock = el("black-clock");
+const button = el("black-button");
+el("black-back").remove();
+overlay.id = "screen-black";
+clock.id = "clock-display";
+button.id = "btn-enter-black";
+overlay.setAttribute("aria-label",
+"睡眠モード。単タップで時計点灯。1.5秒長押しで記録画面へ復帰");
+clock.classList.add("clock-dimmed");
+
+const style = document.createElement("style");
+style.id = "sleep-mode-style-v04";
+style.textContent = [
+"#screen-black{position:fixed;inset:0;width:100%;height:100%;margin:0;",
+"z-index:2147483647;background:#000000!important;display:flex;",
+"align-items:center;justify-content:center;",
+"padding:24px;touch-action:none;overscroll-behavior:none;",
+"user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;outline:none}",
+"#screen-black .black-content{width:100%;max-width:400px;text-align:center}",
+"#clock-display{display:block;font-size:72px;font-weight:300;",
+"letter-spacing:2px;font-variant-numeric:tabular-nums;color:#fffdd0}",
+"#clock-display.clock-dimmed{opacity:.22}",
+"#clock-display.clock-bright{opacity:1}",
+":root:fullscreen,:root::backdrop{background:#000000}",
+"#sleep-mode-note{position:absolute;bottom:calc(12px + env(safe-area-inset-bottom,0px));",
+"left:16px;right:16px;margin:0;color:#fffdd0;opacity:.28;",
+"font-size:11px;line-height:1.6;text-align:center;pointer-events:none}",
+"@media(max-width:360px){#clock-display{font-size:60px}}"
+].join("");
+document.head.append(style);
+
+const status = document.createElement("p");
+status.id = "sleep-mode-status";
+status.className = "note";
+status.setAttribute("role","status");
+status.hidden = true;
+button.after(status);
+const note = document.createElement("p");
+note.id = "sleep-mode-note";
+note.setAttribute("role","status");
+note.hidden = true;
+overlay.append(note);
+
+const usage = el("usage-dialog").querySelectorAll("li");
+usage[5].innerHTML =
+"<strong>暗い画面で時刻を見る・戻る</strong><br>" +
+"時計は暗いクリーム色で表示します。単タップで明るくなり、" +
+"約3秒後に減光します。画面を動かさず1.5秒長押しすると、" +
+"録音を止めずに記録画面へ戻ります。";
+
+button.addEventListener("click",enterBlackScreen);
+overlay.addEventListener("contextmenu",event => event.preventDefault());
+
+function holdSucceeded() {
+sleepHoldTimer = null;
+if (!sleepActive) return;
+suppressSleepClick();
+leaveBlackScreen();
+}
+
+function beginPointer(id,x,y) {
+if (!sleepActive) return;
+if (sleepPointer || sleepKeyboard) {
+cancelSleepHold();
+if (sleepPointer) sleepPointer.tap = false;
+return;
+}
+sleepPointer = {id,x,y,tap:true};
+sleepHoldTimer = setTimeout(holdSucceeded,1500);
+}
+
+function movePointer(id,x,y) {
+if (!sleepPointer || sleepPointer.id !== id) return;
+if (x !== sleepPointer.x || y !== sleepPointer.y) {
+cancelSleepHold();
+sleepPointer.tap = false;
+}
+}
+
+function endPointer(id,cancelled) {
+if (!sleepPointer || sleepPointer.id !== id) return;
+const tap = sleepPointer.tap && !cancelled;
+cancelSleepHold();
+sleepPointer = null;
+if (tap && sleepActive) wakeClock();
+}
+
+if (window.PointerEvent) {
+overlay.addEventListener("pointerdown",event => {
+if (event.pointerType === "mouse" && event.button !== 0) return;
+event.preventDefault();
+beginPointer(event.pointerId,event.clientX,event.clientY);
+try { overlay.setPointerCapture(event.pointerId); } catch (_) {}
+});
+overlay.addEventListener("pointermove",event => {
+movePointer(event.pointerId,event.clientX,event.clientY);
+});
+overlay.addEventListener("pointerup",event => {
+event.preventDefault();
+endPointer(event.pointerId,false);
+});
+overlay.addEventListener("pointercancel",event => {
+endPointer(event.pointerId,true);
+});
+overlay.addEventListener("lostpointercapture",event => {
+endPointer(event.pointerId,true);
+});
+} else {
+overlay.addEventListener("touchstart",event => {
+event.preventDefault();
+if (event.touches.length !== 1) {
+cancelSleepHold();
+if (sleepPointer) sleepPointer.tap = false;
+return;
+}
+const touch = event.touches[0];
+beginPointer(touch.identifier,touch.clientX,touch.clientY);
+},{passive:false});
+overlay.addEventListener("touchmove",event => {
+event.preventDefault();
+for (const touch of event.changedTouches) {
+movePointer(touch.identifier,touch.clientX,touch.clientY);
+}
+},{passive:false});
+overlay.addEventListener("touchend",event => {
+event.preventDefault();
+for (const touch of event.changedTouches) endPointer(touch.identifier,false);
+},{passive:false});
+overlay.addEventListener("touchcancel",event => {
+for (const touch of event.changedTouches) endPointer(touch.identifier,true);
+});
+}
+
+// キーボードもEnter/Spaceの1.5秒長押し。Escapeでの復帰は実装しない。
+overlay.addEventListener("keydown",event => {
+if (event.key !== "Enter" && event.key !== " ") return;
+event.preventDefault();
+if (event.repeat || sleepKeyboard || sleepPointer) return;
+sleepKeyboard = event.key;
+sleepHoldTimer = setTimeout(holdSucceeded,1500);
+});
+overlay.addEventListener("keyup",event => {
+if (sleepKeyboard !== event.key) return;
+event.preventDefault();
+cancelSleepHold();
+sleepKeyboard = null;
+if (sleepActive) wakeClock();
+});
+
+function releasedAfterHold() {
+if (sleepAwaitRelease) {
+sleepAwaitRelease = false;
+sleepSuppressUntil = performance.now() + 800;
+}
+}
+document.addEventListener("pointerup",releasedAfterHold,true);
+document.addEventListener("pointercancel",releasedAfterHold,true);
+document.addEventListener("touchend",releasedAfterHold,true);
+document.addEventListener("touchcancel",releasedAfterHold,true);
+document.addEventListener("keyup",releasedAfterHold,true);
+
+// 長押し後に下の画面へ流れるclick、および黒画面内のclickを抑止。
+// 単タップ点灯はpointerup/touchendで実行済み。
+document.addEventListener("click",event => {
+if (sleepAwaitRelease || performance.now() < sleepSuppressUntil ||
+(sleepActive && overlay.contains(event.target))) {
+event.preventDefault();
+event.stopImmediatePropagation();
+}
+},true);
+
+function interruptHold() {
+cancelSleepHold();
+if (sleepPointer) sleepPointer.tap = false;
+sleepKeyboard = null;
+}
+window.addEventListener("blur",interruptHold);
+document.addEventListener("visibilitychange",() => {
+interruptHold();
+if (document.visibilityState === "visible") {
+sleepAwaitRelease = false;
+if (sleepActive) void verifySleepWakeLock(sleepEpoch);
+}
+});
+document.addEventListener("fullscreenchange",() => {
+if (!sleepActive) return;
+if (!document.fullscreenElement) {
+sleepFullscreenOwned = false;
+sleepNotice("fullscreen","全画面が解除されました。長押しで戻り、再度黒画面に切り替えてください");
+} else {
+sleepNotice("fullscreen","");
+}
+});
+clockTimer = setInterval(() => {
+if (!disposed && sleepActive) {
+updateClock();
+if (navigator.wakeLock && (!wakeLock || wakeLock.released)) {
+sleepNotice("wake","画面点灯維持が解除されています：自動スリープに注意");
+}
+}
+},1000);
 }
 
 function cacheBusted(url) {
@@ -1724,6 +2084,7 @@ async function disposeForUpdate() {
 if (recording || starting || stopping || pendingChunks) {
 throw new Error("録音・保存処理中は更新できません。");
 }
+leaveBlackScreen(false);
 disposed = true;
 stopMeterTimer();
 disconnectMicrophoneMeter();
@@ -1906,37 +2267,7 @@ openCalendar("capture-screen");
 el("capture-help-button").addEventListener("click", () => {
 el("usage-dialog").showModal();
 });
-el("black-button").addEventListener("click", () => {
-if (!recording || stopping) return;
-updateClock();
-el("black-screen").hidden = false;
-document.body.style.overflow = "hidden";
-setClockState("dim");
-clearTimeout(clockHideTimer);
-el("black-screen").focus();
-});
-el("black-screen").addEventListener("click", event => {
-if (event.target.closest("#black-back")) return;
-wakeClock();
-});
-el("black-screen").addEventListener("keydown", event => {
-if (event.target !== el("black-screen")) return;
-if (event.key === "Enter" || event.key === " ") {
-event.preventDefault();
-wakeClock();
-}
-if (event.key === "Escape") {
-event.preventDefault();
-leaveBlackScreen();
-}
-});
-el("black-back").addEventListener("click", event => {
-event.stopPropagation();
-leaveBlackScreen();
-});
-clockTimer = setInterval(() => {
-if (!el("black-screen").hidden) updateClock();
-}, 1000);
+installSleepMode();
 
 el("record-back").addEventListener("click", () =>
 showScreen("capture-screen"));
@@ -2039,6 +2370,7 @@ event.returnValue = "";
 }
 });
 window.addEventListener("pagehide", () => {
+leaveBlackScreen(false);
 stopMeterTimer();
 // ページ終了時の非同期保存は保証しない。
 // 正常終了の印を付けず、次回起動時に保存済み範囲を回復する。
@@ -2220,6 +2552,7 @@ installVisibleUpdateUI();
 
 void initialize();
 })();
+
 
 
 </script>
