@@ -300,10 +300,11 @@
 
 
 
+
 (() => {
 "use strict";
 
-const APP_VERSION = "v20261009-04";
+const APP_VERSION = "v20261009-05";
 const BUILD_MARKER = "SOMNOLOG_FROZEN_UI_PHASE2";
 const REPOSITORY = "matsuodentalassociation/sleep_track";
 const REPOSITORY_BRANCH = "main";
@@ -1152,6 +1153,111 @@ pendingChunks--;
 });
 }
 
+// SOMNOLOG_RECORDING_GAIN_V05
+let recordingGainSource = null;
+let recordingGainNode = null;
+let recordingGainDestination = null;
+let recordingGainContext = null;
+let recordingGainStateHandler = null;
+
+function recordingGainPolicy() {
+const ua = navigator.userAgent || "";
+const ios = /iPad|iPhone|iPod/.test(ua) ||
+(navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+const android = /Android/i.test(ua);
+const deviceClass = ios ? "ios" : android ? "android" : "other";
+const gain = ios ? 3 : android ? 2 / 3 : 1;
+return {
+policyVersion:"device-recording-gain-v05",
+deviceClass,
+deviceDetection:"user_agent_and_platform_heuristic",
+gainLinear:gain,
+gainDb:20 * Math.log10(gain),
+processingStage:"web_audio_before_media_recorder",
+meterSignal:"original_microphone_input",
+meterDisplayGain:8,
+denoiseApplied:false,
+limiterApplied:false,
+rawAudioRetained:false,
+noiseProfile:null,
+clippingMeasured:false,
+encodedAmplitudeVerified:false,
+note:"固定デジタルゲイン。音圧校正ではない。増幅前音声は別保存しない。"
+};
+}
+
+function disconnectRecordingGain() {
+if (recordingGainContext && recordingGainStateHandler) {
+recordingGainContext.removeEventListener(
+"statechange",recordingGainStateHandler);
+}
+recordingGainStateHandler = null;
+recordingGainContext = null;
+for (const node of [
+recordingGainSource,recordingGainNode,recordingGainDestination
+]) {
+if (node) { try { node.disconnect(); } catch (_) {} }
+}
+if (recordingGainDestination) {
+recordingGainDestination.stream.getTracks().forEach(track => track.stop());
+}
+recordingGainSource = null;
+recordingGainNode = null;
+recordingGainDestination = null;
+}
+
+function createRecordingGainStream(policy) {
+disconnectRecordingGain();
+if (!stream || !audioContext || audioContext.state !== "running" ||
+typeof audioContext.createMediaStreamDestination !== "function") {
+throw new Error("録音ゲイン経路を作成できません。マイクを再許可してください。");
+}
+try {
+// メーターとは独立した分岐。既存meterSourceは変更しない。
+recordingGainSource = audioContext.createMediaStreamSource(stream);
+recordingGainNode = audioContext.createGain();
+recordingGainNode.gain.setValueAtTime(
+policy.gainLinear,audioContext.currentTime);
+recordingGainDestination = audioContext.createMediaStreamDestination();
+recordingGainDestination.channelCount = 1;
+recordingGainDestination.channelCountMode = "explicit";
+recordingGainSource.connect(recordingGainNode);
+recordingGainNode.connect(recordingGainDestination);
+// スピーカーには接続しない。
+const output = recordingGainDestination.stream;
+if (!output.getAudioTracks().some(track => track.readyState === "live")) {
+throw new Error("ゲイン調整後の音声トラックを取得できません。");
+}
+recordingGainContext = audioContext;
+recordingGainStateHandler = () => {
+if (recording && !stopping &&
+recordingGainContext &&
+recordingGainContext.state !== "running") {
+emergencyStop(new Error(
+"録音ゲインの音声処理が停止しました。欠測の可能性があるため停止します。"));
+}
+};
+recordingGainContext.addEventListener(
+"statechange",recordingGainStateHandler);
+output.getAudioTracks().forEach(track => {
+track.addEventListener("ended",() => {
+if (recording && !stopping) {
+emergencyStop(new Error("ゲイン調整後の音声入力が終了しました。"));
+}
+});
+track.addEventListener("mute",() => {
+if (recording && !stopping) {
+emergencyStop(new Error("ゲイン調整後の音声入力が途絶しました。"));
+}
+});
+});
+return output;
+} catch (error) {
+disconnectRecordingGain();
+throw error;
+}
+}
+
 async function beginRecording(resumePromise) {
 if (recording || starting || stopping || updating || !ownsRuntime) return;
 starting = true;
@@ -1174,7 +1280,9 @@ const sessionId = `sess_${startDate.getFullYear()}`
 + `${pad(startDate.getHours())}${pad(startDate.getMinutes())}`
 + `${pad(startDate.getSeconds())}_${sessionSuffix()}`;
 const identifier = await patientId();
-recorder = new MediaRecorder(stream, {
+const appliedRecordingGain = recordingGainPolicy();
+const gainAdjustedStream = createRecordingGainStream(appliedRecordingGain);
+recorder = new MediaRecorder(gainAdjustedStream, {
 mimeType,
 audioBitsPerSecond: REQUESTED_BITRATE
 });
@@ -1219,6 +1327,7 @@ encodedSampleRateVerified: false,
 encodedChannelsVerified: false,
 chunkPlaybackVerified: false
 },
+audioProcessing: appliedRecordingGain,
 audioFiles: [],
 audioBytes: 0,
 audioChunkCount: 0,
@@ -1280,6 +1389,9 @@ catch (error) { emergencyStop(error); }
 updateControls();
 await acquireWakeLock();
 previewMessage("記録開始 — Phase 2",
+"保存音声ゲイン：" + appliedRecordingGain.deviceClass + "／" +
+appliedRecordingGain.gainLinear.toFixed(3) + "倍。" +
+"メーターは増幅前のままです。増幅でノイズ・音割れが増える場合があります。" +
 "実際の圧縮音声を約30秒ごとに端末内へ保存します。"
 + "実測メーターは動作します。音・体動の検出時間集計は未実装です。"
 + "黒画面は画面ロックではありません。手動ロック・背景移行による継続は保証しません。");
@@ -1300,6 +1412,7 @@ activeSession.recording.totalDurationMs = 0;
 activeSession.metrics.dataStatus = "has_missing";
 try { await putSession(activeSession); } catch (_) {}
 }
+disconnectRecordingGain();
 activeSession = null;
 recorder = null;
 starting = false;
@@ -1395,6 +1508,7 @@ if (stream) {
 stream.getTracks().forEach(track => track.stop());
 stream = null;
 }
+disconnectRecordingGain();
 disconnectMicrophoneMeter();
 ready.microphone = false;
 activeSession = null;
@@ -2086,6 +2200,7 @@ throw new Error("録音・保存処理中は更新できません。");
 }
 leaveBlackScreen(false);
 disposed = true;
+disconnectRecordingGain();
 stopMeterTimer();
 disconnectMicrophoneMeter();
 clearInterval(leaseTimer);
@@ -2552,6 +2667,7 @@ installVisibleUpdateUI();
 
 void initialize();
 })();
+
 
 
 
