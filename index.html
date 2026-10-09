@@ -304,7 +304,7 @@
 (() => {
 "use strict";
 
-const APP_VERSION = "v20261009-05";
+const APP_VERSION = "v20261009-06";
 const BUILD_MARKER = "SOMNOLOG_FROZEN_UI_PHASE2";
 const REPOSITORY = "matsuodentalassociation/sleep_track";
 const REPOSITORY_BRANCH = "main";
@@ -1166,7 +1166,7 @@ const ios = /iPad|iPhone|iPod/.test(ua) ||
 (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 const android = /Android/i.test(ua);
 const deviceClass = ios ? "ios" : android ? "android" : "other";
-const gain = ios ? 3 : android ? 2 / 3 : 1;
+const gain = ios ? 9 : android ? 2 / 3 : 1;
 return {
 policyVersion:"device-recording-gain-v05",
 deviceClass,
