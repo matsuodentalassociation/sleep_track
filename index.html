@@ -299,8 +299,6 @@
   <script>
 
 
-
-
 (() => {
 "use strict";
 
@@ -561,7 +559,9 @@ el("preview-dialog").showModal();
 
 function showScreen(id) {
 closeDialogs();
-leaveBlackScreen(false);
+clearTimeout(clockHideTimer);
+el("black-screen").hidden = true;
+document.body.style.overflow = "";
 ["capture-screen", "record-screen", "calendar-screen"]
 .forEach(name => { el(name).hidden = name !== id; });
 window.scrollTo(0, 0);
@@ -654,14 +654,14 @@ el("save-status").textContent = session.calendarSaved
 }
 
 function updateControls() {
-const busy = starting || stopping || updating || disposed;
+const busy = starting || stopping || updating || verifyBusy || disposed;
 const liveTrack = microphoneInputAvailable();
 ready.motion = motionInputAvailable();
 ready.microphone = Boolean(liveTrack);
 el("start").disabled = busy || recording || !db || !ownsRuntime
 || !ready.microphone || !ready.motion;
 el("stop-button").disabled = !recording || stopping;
-el("btn-enter-black").disabled = !recording || stopping;
+el("black-button").disabled = !recording || stopping;
 el("history-button").disabled = recording || busy || !db;
 el("microphone-permission").disabled = recording || busy || !ownsRuntime;
 el("motion-permission").disabled = recording || busy || !ownsRuntime;
@@ -1153,113 +1153,8 @@ pendingChunks--;
 });
 }
 
-// SOMNOLOG_RECORDING_GAIN_V05
-let recordingGainSource = null;
-let recordingGainNode = null;
-let recordingGainDestination = null;
-let recordingGainContext = null;
-let recordingGainStateHandler = null;
-
-function recordingGainPolicy() {
-const ua = navigator.userAgent || "";
-const ios = /iPad|iPhone|iPod/.test(ua) ||
-(navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-const android = /Android/i.test(ua);
-const deviceClass = ios ? "ios" : android ? "android" : "other";
-const gain = ios ? 9 : android ? 2 / 3 : 1;
-return {
-policyVersion:"device-recording-gain-v05",
-deviceClass,
-deviceDetection:"user_agent_and_platform_heuristic",
-gainLinear:gain,
-gainDb:20 * Math.log10(gain),
-processingStage:"web_audio_before_media_recorder",
-meterSignal:"original_microphone_input",
-meterDisplayGain:8,
-denoiseApplied:false,
-limiterApplied:false,
-rawAudioRetained:false,
-noiseProfile:null,
-clippingMeasured:false,
-encodedAmplitudeVerified:false,
-note:"固定デジタルゲイン。音圧校正ではない。増幅前音声は別保存しない。"
-};
-}
-
-function disconnectRecordingGain() {
-if (recordingGainContext && recordingGainStateHandler) {
-recordingGainContext.removeEventListener(
-"statechange",recordingGainStateHandler);
-}
-recordingGainStateHandler = null;
-recordingGainContext = null;
-for (const node of [
-recordingGainSource,recordingGainNode,recordingGainDestination
-]) {
-if (node) { try { node.disconnect(); } catch (_) {} }
-}
-if (recordingGainDestination) {
-recordingGainDestination.stream.getTracks().forEach(track => track.stop());
-}
-recordingGainSource = null;
-recordingGainNode = null;
-recordingGainDestination = null;
-}
-
-function createRecordingGainStream(policy) {
-disconnectRecordingGain();
-if (!stream || !audioContext || audioContext.state !== "running" ||
-typeof audioContext.createMediaStreamDestination !== "function") {
-throw new Error("録音ゲイン経路を作成できません。マイクを再許可してください。");
-}
-try {
-// メーターとは独立した分岐。既存meterSourceは変更しない。
-recordingGainSource = audioContext.createMediaStreamSource(stream);
-recordingGainNode = audioContext.createGain();
-recordingGainNode.gain.setValueAtTime(
-policy.gainLinear,audioContext.currentTime);
-recordingGainDestination = audioContext.createMediaStreamDestination();
-recordingGainDestination.channelCount = 1;
-recordingGainDestination.channelCountMode = "explicit";
-recordingGainSource.connect(recordingGainNode);
-recordingGainNode.connect(recordingGainDestination);
-// スピーカーには接続しない。
-const output = recordingGainDestination.stream;
-if (!output.getAudioTracks().some(track => track.readyState === "live")) {
-throw new Error("ゲイン調整後の音声トラックを取得できません。");
-}
-recordingGainContext = audioContext;
-recordingGainStateHandler = () => {
-if (recording && !stopping &&
-recordingGainContext &&
-recordingGainContext.state !== "running") {
-emergencyStop(new Error(
-"録音ゲインの音声処理が停止しました。欠測の可能性があるため停止します。"));
-}
-};
-recordingGainContext.addEventListener(
-"statechange",recordingGainStateHandler);
-output.getAudioTracks().forEach(track => {
-track.addEventListener("ended",() => {
-if (recording && !stopping) {
-emergencyStop(new Error("ゲイン調整後の音声入力が終了しました。"));
-}
-});
-track.addEventListener("mute",() => {
-if (recording && !stopping) {
-emergencyStop(new Error("ゲイン調整後の音声入力が途絶しました。"));
-}
-});
-});
-return output;
-} catch (error) {
-disconnectRecordingGain();
-throw error;
-}
-}
-
 async function beginRecording(resumePromise) {
-if (recording || starting || stopping || updating || !ownsRuntime) return;
+if (recording || starting || stopping || updating || verifyBusy || !ownsRuntime) return;
 starting = true;
 updateControls();
 let sessionWritten = false;
@@ -1280,8 +1175,7 @@ const sessionId = `sess_${startDate.getFullYear()}`
 + `${pad(startDate.getHours())}${pad(startDate.getMinutes())}`
 + `${pad(startDate.getSeconds())}_${sessionSuffix()}`;
 const identifier = await patientId();
-const appliedRecordingGain = recordingGainPolicy();
-const gainAdjustedStream = createRecordingGainStream(appliedRecordingGain);
+const gainAdjustedStream = buildRecordingStream();
 recorder = new MediaRecorder(gainAdjustedStream, {
 mimeType,
 audioBitsPerSecond: REQUESTED_BITRATE
@@ -1325,9 +1219,10 @@ inputChannels: settings.channelCount || null,
 audioContextSampleRate: audioContext.sampleRate,
 encodedSampleRateVerified: false,
 encodedChannelsVerified: false,
-chunkPlaybackVerified: false
+chunkPlaybackVerified: false,
+recordingGain: recordingGainPolicy(),
+levelLog: "100ms_observations_separate_windows"
 },
-audioProcessing: appliedRecordingGain,
 audioFiles: [],
 audioBytes: 0,
 audioChunkCount: 0,
@@ -1373,6 +1268,7 @@ emergencyStop(new Error("録音が予期せず終了しました。"));
 recordingStartMono = performance.now();
 recorder.start();
 recording = true;
+startLevelLogging();
 starting = false;
 chunkTimer = setInterval(() => {
 if (!recorder || recorder.state !== "recording" || stopping) return;
@@ -1389,10 +1285,7 @@ catch (error) { emergencyStop(error); }
 updateControls();
 await acquireWakeLock();
 previewMessage("記録開始 — Phase 2",
-"保存音声ゲイン：" + appliedRecordingGain.deviceClass + "／" +
-appliedRecordingGain.gainLinear.toFixed(3) + "倍。" +
-"メーターは増幅前のままです。増幅でノイズ・音割れが増える場合があります。" +
-"実際の圧縮音声を約30秒ごとに端末内へ保存します。"
+"実際の圧縮音声を約30秒ごとに端末内へ保存します。録音ゲイン設定は" + recordingGainPolicy().gainLinear + "倍です。停止後に保存音声を再生・出力できます。倍率の実機確認は未実施です。"
 + "実測メーターは動作します。音・体動の検出時間集計は未実装です。"
 + "黒画面は画面ロックではありません。手動ロック・背景移行による継続は保証しません。");
 } catch (error) {
@@ -1412,7 +1305,7 @@ activeSession.recording.totalDurationMs = 0;
 activeSession.metrics.dataStatus = "has_missing";
 try { await putSession(activeSession); } catch (_) {}
 }
-disconnectRecordingGain();
+clearRecordingGraph();
 activeSession = null;
 recorder = null;
 starting = false;
@@ -1460,7 +1353,8 @@ new Error("MediaRecorderの最終データ待ちが30秒を超えました。")
 clearTimeout(timer);
 }
 }
-// stopイベントに先行する最後のdataavailableを含めて保存完了を待つ。
+// 最終音声と計測ログの保存確定を待つ。
+stopLevelLogging();
 await saveChain;
 session.state = recordingFault ? "recovered" : "completed";
 session.calendarSaved = Boolean(recordingFault);
@@ -1508,7 +1402,7 @@ if (stream) {
 stream.getTracks().forEach(track => track.stop());
 stream = null;
 }
-disconnectRecordingGain();
+clearRecordingGraph();
 disconnectMicrophoneMeter();
 ready.microphone = false;
 activeSession = null;
@@ -1772,397 +1666,36 @@ el("share-status").textContent =
 el("share-dialog").showModal();
 }
 
-// SOMNOLOG_SLEEP_MODE_V04
-let sleepActive = false;
-let sleepSavedStyle = null;
-let sleepThemeSaved = [];
-let sleepThemeCreated = null;
-let sleepFullscreenOwned = false;
-let sleepEpoch = 0;
-let sleepHoldTimer = null;
-let sleepPointer = null;
-let sleepKeyboard = null;
-let sleepSuppressUntil = 0;
-let sleepAwaitRelease = false;
-const sleepWarnings = new Map();
-
-function sleepNotice(key, message) {
-if (message) sleepWarnings.set(key,message);
-else sleepWarnings.delete(key);
-const text = Array.from(sleepWarnings.values()).join("／");
-const status = el("sleep-mode-status");
-const note = el("sleep-mode-note");
-if (status) {
-status.textContent = text;
-status.hidden = !text;
-}
-if (note) {
-note.textContent = text;
-note.hidden = !text;
-}
-}
-
 function updateClock() {
 const d = new Date();
-const text = pad(d.getHours()) + ":" + pad(d.getMinutes());
-el("clock-display").textContent = text;
-el("clock-display").dateTime = text;
+const text = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+el("black-clock").textContent = text;
+el("black-clock").dateTime = text;
 }
 
 function setClockState(state) {
-const bright = state === "bright";
-const clock = el("clock-display");
-clock.classList.toggle("clock-bright",bright);
-clock.classList.toggle("clock-dimmed",!bright);
-el("screen-black").dataset.clockState = bright ? "bright" : "dim";
+el("black-screen").dataset.clockState = state;
+el("black-back").disabled = state === "off";
+el("black-screen").setAttribute("aria-label", state === "off"
+? "黒画面。タップまたはEnterで時計と戻るボタンを表示"
+: "時計表示。タップで明るく表示。戻るボタンで記録画面に復帰");
+if (state === "off" && document.activeElement === el("black-back")) {
+el("black-screen").focus();
+}
 }
 
 function wakeClock() {
-if (!sleepActive) return;
 updateClock();
 setClockState("bright");
 clearTimeout(clockHideTimer);
-clockHideTimer = setTimeout(() => {
-if (sleepActive) setClockState("dim");
-},3000);
+clockHideTimer = setTimeout(() => setClockState("off"), 3000);
 }
 
-function cancelSleepHold() {
-clearTimeout(sleepHoldTimer);
-sleepHoldTimer = null;
-}
-
-function suppressSleepClick() {
-sleepSuppressUntil = performance.now() + 800;
-sleepAwaitRelease = true;
-}
-
-function leaveBlackScreen(focusButton = true) {
-if (!sleepActive) return;
-sleepActive = false;
-sleepEpoch++;
+function leaveBlackScreen() {
 clearTimeout(clockHideTimer);
-cancelSleepHold();
-sleepPointer = null;
-sleepKeyboard = null;
-const overlay = el("screen-black");
-overlay.classList.remove("active");
-overlay.hidden = true;
-if (sleepSavedStyle) {
-document.documentElement.style.backgroundColor = sleepSavedStyle.htmlBackground;
-document.body.style.backgroundColor = sleepSavedStyle.bodyBackground;
-document.documentElement.style.overflow = sleepSavedStyle.htmlOverflow;
-document.body.style.overflow = sleepSavedStyle.bodyOverflow;
-sleepSavedStyle = null;
-}
-for (const item of sleepThemeSaved) {
-if (item.content === null) item.node.removeAttribute("content");
-else item.node.setAttribute("content",item.content);
-}
-sleepThemeSaved = [];
-if (sleepThemeCreated) {
-sleepThemeCreated.remove();
-sleepThemeCreated = null;
-}
-if (sleepFullscreenOwned && document.fullscreenElement &&
-document.exitFullscreen) {
-Promise.resolve(document.exitFullscreen()).catch(error => {
-sleepNotice("fullscreen","全画面解除に失敗：" + error.name);
-});
-}
-sleepFullscreenOwned = false;
-if (focusButton) el("btn-enter-black").focus({preventScroll:true});
-// 録音・センサー・保存・Wake Lockは停止しない。
-}
-
-async function verifySleepWakeLock(epoch) {
-await acquireWakeLock();
-if (!sleepActive || epoch !== sleepEpoch || disposed) return;
-if (!navigator.wakeLock) {
-sleepNotice("wake","画面点灯維持API非対応：自動スリープに注意");
-} else if (!wakeLock || wakeLock.released) {
-sleepNotice("wake","画面点灯維持を取得できません：自動スリープに注意");
-} else {
-sleepNotice("wake","");
-}
-}
-
-function enterBlackScreen() {
-if (!recording || stopping || disposed || sleepActive) return;
-closeDialogs();
-sleepWarnings.clear();
-sleepNotice("fullscreen","");
-const epoch = ++sleepEpoch;
-sleepActive = true;
-sleepSavedStyle = {
-htmlBackground:document.documentElement.style.backgroundColor,
-bodyBackground:document.body.style.backgroundColor,
-htmlOverflow:document.documentElement.style.overflow,
-bodyOverflow:document.body.style.overflow
-};
-document.documentElement.style.backgroundColor = "#000000";
-document.body.style.backgroundColor = "#000000";
-document.documentElement.style.overflow = "hidden";
-document.body.style.overflow = "hidden";
-
-sleepThemeSaved = Array.from(
-document.querySelectorAll('meta[name="theme-color"]')
-).map(node => ({node,content:node.getAttribute("content")}));
-for (const item of sleepThemeSaved) item.node.setAttribute("content","#000000");
-if (!sleepThemeSaved.length) {
-sleepThemeCreated = document.createElement("meta");
-sleepThemeCreated.name = "theme-color";
-sleepThemeCreated.content = "#000000";
-document.head.append(sleepThemeCreated);
-}
-
-const overlay = el("screen-black");
-updateClock();
-setClockState("dim");
-clearTimeout(clockHideTimer);
-overlay.hidden = false;
-overlay.classList.add("active");
-overlay.focus({preventScroll:true});
-
-// ユーザーのタップ直下で要求する。ここより前にawaitを置かない。
-const root = document.documentElement;
-if (!document.fullscreenElement) {
-if (root.requestFullscreen) {
-try {
-const task = root.requestFullscreen({navigationUI:"hide"});
-Promise.resolve(task).then(() => {
-if (epoch !== sleepEpoch || !sleepActive) {
-if (document.fullscreenElement === root && document.exitFullscreen) {
-Promise.resolve(document.exitFullscreen()).catch(() => {});
-}
-return;
-}
-sleepFullscreenOwned = document.fullscreenElement === root;
-sleepNotice("fullscreen",sleepFullscreenOwned ? "" :
-"全画面未取得：上下の帯が残る場合があります");
-}).catch(error => {
-if (sleepActive && epoch === sleepEpoch) {
-sleepNotice("fullscreen","全画面取得失敗：" + error.name +
-"（上下の帯が残る場合があります）");
-}
-});
-} catch (error) {
-sleepNotice("fullscreen","全画面取得失敗：" + error.name);
-}
-} else {
-sleepNotice("fullscreen","全画面API非対応：上下の帯が残る場合があります");
-}
-}
-void verifySleepWakeLock(epoch).catch(error => {
-if (sleepActive && epoch === sleepEpoch) {
-sleepNotice("wake","画面点灯維持の確認失敗：" + error.name);
-}
-});
-}
-
-function installSleepMode() {
-const overlay = el("black-screen");
-const clock = el("black-clock");
-const button = el("black-button");
-el("black-back").remove();
-overlay.id = "screen-black";
-clock.id = "clock-display";
-button.id = "btn-enter-black";
-overlay.setAttribute("aria-label",
-"睡眠モード。単タップで時計点灯。1.5秒長押しで記録画面へ復帰");
-clock.classList.add("clock-dimmed");
-
-const style = document.createElement("style");
-style.id = "sleep-mode-style-v04";
-style.textContent = [
-"#screen-black{position:fixed;inset:0;width:100%;height:100%;margin:0;",
-"z-index:2147483647;background:#000000!important;display:flex;",
-"align-items:center;justify-content:center;",
-"padding:24px;touch-action:none;overscroll-behavior:none;",
-"user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;outline:none}",
-"#screen-black .black-content{width:100%;max-width:400px;text-align:center}",
-"#clock-display{display:block;font-size:72px;font-weight:300;",
-"letter-spacing:2px;font-variant-numeric:tabular-nums;color:#fffdd0}",
-"#clock-display.clock-dimmed{opacity:.22}",
-"#clock-display.clock-bright{opacity:1}",
-":root:fullscreen,:root::backdrop{background:#000000}",
-"#sleep-mode-note{position:absolute;bottom:calc(12px + env(safe-area-inset-bottom,0px));",
-"left:16px;right:16px;margin:0;color:#fffdd0;opacity:.28;",
-"font-size:11px;line-height:1.6;text-align:center;pointer-events:none}",
-"@media(max-width:360px){#clock-display{font-size:60px}}"
-].join("");
-document.head.append(style);
-
-const status = document.createElement("p");
-status.id = "sleep-mode-status";
-status.className = "note";
-status.setAttribute("role","status");
-status.hidden = true;
-button.after(status);
-const note = document.createElement("p");
-note.id = "sleep-mode-note";
-note.setAttribute("role","status");
-note.hidden = true;
-overlay.append(note);
-
-const usage = el("usage-dialog").querySelectorAll("li");
-usage[5].innerHTML =
-"<strong>暗い画面で時刻を見る・戻る</strong><br>" +
-"時計は暗いクリーム色で表示します。単タップで明るくなり、" +
-"約3秒後に減光します。画面を動かさず1.5秒長押しすると、" +
-"録音を止めずに記録画面へ戻ります。";
-
-button.addEventListener("click",enterBlackScreen);
-overlay.addEventListener("contextmenu",event => event.preventDefault());
-
-function holdSucceeded() {
-sleepHoldTimer = null;
-if (!sleepActive) return;
-suppressSleepClick();
-leaveBlackScreen();
-}
-
-function beginPointer(id,x,y) {
-if (!sleepActive) return;
-if (sleepPointer || sleepKeyboard) {
-cancelSleepHold();
-if (sleepPointer) sleepPointer.tap = false;
-return;
-}
-sleepPointer = {id,x,y,tap:true};
-sleepHoldTimer = setTimeout(holdSucceeded,1500);
-}
-
-function movePointer(id,x,y) {
-if (!sleepPointer || sleepPointer.id !== id) return;
-if (x !== sleepPointer.x || y !== sleepPointer.y) {
-cancelSleepHold();
-sleepPointer.tap = false;
-}
-}
-
-function endPointer(id,cancelled) {
-if (!sleepPointer || sleepPointer.id !== id) return;
-const tap = sleepPointer.tap && !cancelled;
-cancelSleepHold();
-sleepPointer = null;
-if (tap && sleepActive) wakeClock();
-}
-
-if (window.PointerEvent) {
-overlay.addEventListener("pointerdown",event => {
-if (event.pointerType === "mouse" && event.button !== 0) return;
-event.preventDefault();
-beginPointer(event.pointerId,event.clientX,event.clientY);
-try { overlay.setPointerCapture(event.pointerId); } catch (_) {}
-});
-overlay.addEventListener("pointermove",event => {
-movePointer(event.pointerId,event.clientX,event.clientY);
-});
-overlay.addEventListener("pointerup",event => {
-event.preventDefault();
-endPointer(event.pointerId,false);
-});
-overlay.addEventListener("pointercancel",event => {
-endPointer(event.pointerId,true);
-});
-overlay.addEventListener("lostpointercapture",event => {
-endPointer(event.pointerId,true);
-});
-} else {
-overlay.addEventListener("touchstart",event => {
-event.preventDefault();
-if (event.touches.length !== 1) {
-cancelSleepHold();
-if (sleepPointer) sleepPointer.tap = false;
-return;
-}
-const touch = event.touches[0];
-beginPointer(touch.identifier,touch.clientX,touch.clientY);
-},{passive:false});
-overlay.addEventListener("touchmove",event => {
-event.preventDefault();
-for (const touch of event.changedTouches) {
-movePointer(touch.identifier,touch.clientX,touch.clientY);
-}
-},{passive:false});
-overlay.addEventListener("touchend",event => {
-event.preventDefault();
-for (const touch of event.changedTouches) endPointer(touch.identifier,false);
-},{passive:false});
-overlay.addEventListener("touchcancel",event => {
-for (const touch of event.changedTouches) endPointer(touch.identifier,true);
-});
-}
-
-// キーボードもEnter/Spaceの1.5秒長押し。Escapeでの復帰は実装しない。
-overlay.addEventListener("keydown",event => {
-if (event.key !== "Enter" && event.key !== " ") return;
-event.preventDefault();
-if (event.repeat || sleepKeyboard || sleepPointer) return;
-sleepKeyboard = event.key;
-sleepHoldTimer = setTimeout(holdSucceeded,1500);
-});
-overlay.addEventListener("keyup",event => {
-if (sleepKeyboard !== event.key) return;
-event.preventDefault();
-cancelSleepHold();
-sleepKeyboard = null;
-if (sleepActive) wakeClock();
-});
-
-function releasedAfterHold() {
-if (sleepAwaitRelease) {
-sleepAwaitRelease = false;
-sleepSuppressUntil = performance.now() + 800;
-}
-}
-document.addEventListener("pointerup",releasedAfterHold,true);
-document.addEventListener("pointercancel",releasedAfterHold,true);
-document.addEventListener("touchend",releasedAfterHold,true);
-document.addEventListener("touchcancel",releasedAfterHold,true);
-document.addEventListener("keyup",releasedAfterHold,true);
-
-// 長押し後に下の画面へ流れるclick、および黒画面内のclickを抑止。
-// 単タップ点灯はpointerup/touchendで実行済み。
-document.addEventListener("click",event => {
-if (sleepAwaitRelease || performance.now() < sleepSuppressUntil ||
-(sleepActive && overlay.contains(event.target))) {
-event.preventDefault();
-event.stopImmediatePropagation();
-}
-},true);
-
-function interruptHold() {
-cancelSleepHold();
-if (sleepPointer) sleepPointer.tap = false;
-sleepKeyboard = null;
-}
-window.addEventListener("blur",interruptHold);
-document.addEventListener("visibilitychange",() => {
-interruptHold();
-if (document.visibilityState === "visible") {
-sleepAwaitRelease = false;
-if (sleepActive) void verifySleepWakeLock(sleepEpoch);
-}
-});
-document.addEventListener("fullscreenchange",() => {
-if (!sleepActive) return;
-if (!document.fullscreenElement) {
-sleepFullscreenOwned = false;
-sleepNotice("fullscreen","全画面が解除されました。長押しで戻り、再度黒画面に切り替えてください");
-} else {
-sleepNotice("fullscreen","");
-}
-});
-clockTimer = setInterval(() => {
-if (!disposed && sleepActive) {
-updateClock();
-if (navigator.wakeLock && (!wakeLock || wakeLock.released)) {
-sleepNotice("wake","画面点灯維持が解除されています：自動スリープに注意");
-}
-}
-},1000);
+el("black-screen").hidden = true;
+document.body.style.overflow = "";
+el("black-button").focus();
 }
 
 function cacheBusted(url) {
@@ -2195,12 +1728,12 @@ clearTimeout(timer);
 }
 
 async function disposeForUpdate() {
-if (recording || starting || stopping || pendingChunks) {
+if (recording || starting || stopping || pendingChunks || verifyBusy) {
 throw new Error("録音・保存処理中は更新できません。");
 }
-leaveBlackScreen(false);
 disposed = true;
-disconnectRecordingGain();
+clearVerifyFiles();
+clearRecordingGraph();
 stopMeterTimer();
 disconnectMicrophoneMeter();
 clearInterval(leaseTimer);
@@ -2233,7 +1766,7 @@ db = null;
 }
 
 async function applyLatestGitHub() {
-if (recording || starting || stopping || pendingChunks || updating) {
+if (recording || starting || stopping || pendingChunks || updating || verifyBusy) {
 showMessage("更新できません",
 "録音または保存処理が終わってから更新してください。");
 return;
@@ -2316,7 +1849,7 @@ if (!disposed) updateControls();
 }
 
 async function reloadWithoutCache() {
-if (recording || starting || stopping || pendingChunks || updating) {
+if (recording || starting || stopping || pendingChunks || updating || verifyBusy) {
 showMessage("再読み込みできません",
 "録音・保存処理が終わってから操作してください。");
 return;
@@ -2382,7 +1915,37 @@ openCalendar("capture-screen");
 el("capture-help-button").addEventListener("click", () => {
 el("usage-dialog").showModal();
 });
-installSleepMode();
+el("black-button").addEventListener("click", () => {
+if (!recording || stopping) return;
+updateClock();
+el("black-screen").hidden = false;
+document.body.style.overflow = "hidden";
+setClockState("dim");
+clearTimeout(clockHideTimer);
+el("black-screen").focus();
+});
+el("black-screen").addEventListener("click", event => {
+if (event.target.closest("#black-back")) return;
+wakeClock();
+});
+el("black-screen").addEventListener("keydown", event => {
+if (event.target !== el("black-screen")) return;
+if (event.key === "Enter" || event.key === " ") {
+event.preventDefault();
+wakeClock();
+}
+if (event.key === "Escape") {
+event.preventDefault();
+leaveBlackScreen();
+}
+});
+el("black-back").addEventListener("click", event => {
+event.stopPropagation();
+leaveBlackScreen();
+});
+clockTimer = setInterval(() => {
+if (!el("black-screen").hidden) updateClock();
+}, 1000);
 
 el("record-back").addEventListener("click", () =>
 showScreen("capture-screen"));
@@ -2419,9 +1982,8 @@ el("save-calendar").disabled = false;
 }
 });
 el("share-current").addEventListener("click", () => {
-showMessage("音声付きデータの共有は未実装",
-"Phase 4でzip-store-v1の生成を実装します。"
-+ "この版では共有用ファイルを作成しません。");
+showScreen("record-screen");
+void loadSavedAudio();
 });
 el("single-mode").addEventListener("click", () => {
 mode = "single";
@@ -2485,7 +2047,6 @@ event.returnValue = "";
 }
 });
 window.addEventListener("pagehide", () => {
-leaveBlackScreen(false);
 stopMeterTimer();
 // ページ終了時の非同期保存は保証しない。
 // 正常終了の印を付けず、次回起動時に保存済み範囲を回復する。
@@ -2562,6 +2123,418 @@ showMessage("初期化できません", errorText(error));
 }
 }
 
+
+  // SOMNOLOG_AUDIO_VERIFY_V06
+  let verifyBusy = false;
+  let verifyGraph = null;
+  let verifyTimer = null;
+  let verifyRows = [];
+  let verifyBatch = 0;
+  let verifyPreviousMono = null;
+  let verifyAudioURL = null;
+  let verifyCSVURL = null;
+  let verifyFile = null;
+  let verifySelectedId = null;
+  let verifyDecodeContext = null;
+  let verifyPanel = null;
+  const VERIFY_EXPORT_LIMIT = 128 * 1048576;
+  const VERIFY_DECODE_LIMIT = 16 * 1048576;
+
+  function recordingGainPolicy() {
+    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
+      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    const android = /Android/i.test(navigator.userAgent || "");
+    return { deviceClass: ios ? "ios" : android ? "android" : "other",
+      gainLinear: ios ? 9 : android ? 2 / 3 : 1 };
+  }
+
+  function clearRecordingGraph() {
+    clearInterval(verifyTimer);
+    verifyTimer = null;
+    if (verifyGraph) {
+      for (const node of [verifyGraph.source, verifyGraph.gain,
+        verifyGraph.analyser, verifyGraph.destination]) {
+        try { node.disconnect(); } catch (_) {}
+      }
+      verifyGraph.destination.stream.getTracks().forEach(t => t.stop());
+    }
+    verifyGraph = null;
+  }
+
+  function buildRecordingStream() {
+    clearRecordingGraph();
+    const source = audioContext.createMediaStreamSource(stream);
+    const gain = audioContext.createGain();
+    const analyser = audioContext.createAnalyser();
+    const destination = audioContext.createMediaStreamDestination();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0;
+    gain.gain.setValueAtTime(recordingGainPolicy().gainLinear, audioContext.currentTime);
+    // 可能な場合は録音出力をモノラルにする。エンコード後のch数は別途確認する。
+    try {
+      destination.channelCount = 1;
+      destination.channelCountMode = "explicit";
+    } catch (_) {}
+    source.connect(gain);
+    gain.connect(analyser);
+    analyser.connect(destination);
+    verifyGraph = { source, gain, analyser, destination,
+      samples: new Float32Array(analyser.fftSize) };
+    // 録音専用。スピーカーには接続しない。
+    return destination.stream;
+  }
+
+  function levelStats(analyser, samples) {
+    analyser.getFloatTimeDomainData(samples);
+    let sum = 0, peak = 0, over = 0;
+    for (const x of samples) {
+      if (!Number.isFinite(x)) throw new Error("音声解析値が不正です。");
+      sum += x * x;
+      peak = Math.max(peak, Math.abs(x));
+      if (Math.abs(x) >= 1) over++;
+    }
+    const rms = Math.sqrt(sum / samples.length);
+    return { rms, peak, dbfs: rms > 0 ? 20 * Math.log10(rms) : null,
+      over: over / samples.length };
+  }
+
+  function flushLevelRows() {
+    if (!activeSession || !verifyRows.length) return;
+    const sessionId = activeSession.sessionId;
+    const rows = verifyRows;
+    verifyRows = [];
+    const number = ++verifyBatch;
+    saveChain = saveChain.then(async () => {
+      try {
+        await transaction(["profileBins"], "readwrite", tx => {
+          tx.objectStore("profileBins").add({
+            id: sessionId + ":levels:" + String(number).padStart(8, "0"),
+            sessionId, kind: "audio_levels_v06",
+            nominalIntervalMs: 100,
+            measurementBasis: "separate_analyser_windows",
+            rows
+          });
+        });
+      } catch (error) {
+        recordingFault = recordingFault || "計測ログ保存失敗：" + errorText(error);
+        emergencyStop(error);
+      }
+    });
+  }
+
+  function startLevelLogging() {
+    verifyRows = [];
+    verifyBatch = 0;
+    verifyPreviousMono = null;
+    verifyTimer = setInterval(() => {
+      if (!recording || stopping || !activeSession) return;
+      const mono = performance.now();
+      const gap = verifyPreviousMono === null ? null : mono - verifyPreviousMono;
+      verifyPreviousMono = mono;
+      const row = {
+        timestamp: Date.now(), offsetMs: elapsedNow(), gapMs: gap,
+        gainLinear: recordingGainPolicy().gainLinear, status: "missing",
+        inputRms: null, inputPeak: null, inputDbFS: null,
+        outputRms: null, outputPeak: null, outputDbFS: null,
+        outputOverFullScaleFraction: null,
+        motionG: motionInputAvailable() ? motionValueG : null
+      };
+      try {
+        if (microphoneInputAvailable() && verifyGraph) {
+          const before = levelStats(meterAnalyser, meterSamples);
+          const after = levelStats(verifyGraph.analyser, verifyGraph.samples);
+          Object.assign(row, {
+            status: gap !== null && gap > 250 ? "gap" : "observed",
+            inputRms: before.rms, inputPeak: before.peak, inputDbFS: before.dbfs,
+            outputRms: after.rms, outputPeak: after.peak, outputDbFS: after.dbfs,
+            outputOverFullScaleFraction: after.over
+          });
+        }
+      } catch (_) { row.status = "analysis_error"; }
+      verifyRows.push(row);
+      if (verifyRows.length >= 100) flushLevelRows();
+    }, 100);
+  }
+
+  function stopLevelLogging() {
+    clearInterval(verifyTimer);
+    verifyTimer = null;
+    flushLevelRows();
+  }
+
+  function clearVerifyFiles() {
+    if (verifyPanel) {
+      const audio = verifyPanel.querySelector("audio");
+      if (audio) {
+        audio.pause();
+        audio.removeAttribute("src");
+        audio.load();
+      }
+    }
+    if (verifyAudioURL) URL.revokeObjectURL(verifyAudioURL);
+    if (verifyCSVURL) URL.revokeObjectURL(verifyCSVURL);
+    verifyAudioURL = verifyCSVURL = null;
+    verifyFile = null;
+  }
+
+  function verifyMessage(text) {
+    verifyPanel.querySelector("[data-status]").textContent = text;
+  }
+
+  function verifyBlocked() {
+    return Boolean(verifyBusy || recording || starting || stopping || updating || disposed);
+  }
+
+  function sessionItems(name, sessionId) {
+    return transaction([name], "readonly", (tx, result) => {
+      const request = tx.objectStore(name).index("sessionId")
+        .getAll(IDBKeyRange.only(sessionId));
+      request.onsuccess = () => result(request.result);
+    });
+  }
+
+  function resetVerifySelection(session) {
+    if (!verifyPanel) return;
+    const nextId = session ? session.sessionId : null;
+    if (nextId === verifySelectedId) return;
+    clearVerifyFiles();
+    verifySelectedId = nextId;
+    verifyPanel.querySelector("[data-files]").replaceChildren();
+    verifyPanel.querySelector("[data-csv]").replaceChildren();
+    verifyPanel.querySelector("[data-share]").disabled = true;
+    verifyPanel.querySelector("[data-decode]").disabled = true;
+    verifyMessage(session ? "対象：" + session.sessionId : "対象記録なし");
+  }
+
+  async function loadSavedAudio() {
+    if (verifyBlocked() || !currentSession) return;
+    const session = currentSession;
+    verifyBusy = true;
+    updateControls();
+    try {
+      clearVerifyFiles();
+      verifyPanel.querySelector("[data-files]").replaceChildren();
+      verifyPanel.querySelector("[data-csv]").replaceChildren();
+      verifyPanel.querySelector("[data-share]").disabled = true;
+      verifyPanel.querySelector("[data-decode]").disabled = true;
+      verifyMessage("保存音声を読み込んでいます…");
+      if (!Number.isFinite(session.audioBytes) || session.audioBytes <= 0) {
+        throw new Error("保存音声がありません。");
+      }
+      if (session.audioBytes > VERIFY_EXPORT_LIMIT) {
+        throw new Error("音声読込上限128 MiBを超えています。短時間記録で確認してください。");
+      }
+      const chunks = await sessionItems("audioChunks", session.sessionId);
+      chunks.sort((a, b) => a.sequence - b.sequence);
+      if (!chunks.length || chunks.length !== session.audioChunkCount) {
+        throw new Error("音声チャンク数が保存記録と一致しません。");
+      }
+      let bytes = 0;
+      chunks.forEach((chunk, i) => {
+        if (chunk.sequence !== i + 1 || !(chunk.data instanceof ArrayBuffer)) {
+          throw new Error("音声チャンクの順序または形式が不正です。");
+        }
+        bytes += chunk.data.byteLength;
+      });
+      if (bytes !== session.audioBytes || bytes > VERIFY_EXPORT_LIMIT) {
+        throw new Error("音声サイズが一致しないか、上限を超えています。");
+      }
+      const type = session.audioConfig.mimeType || chunks[0].mimeType;
+      const extension = type.includes("mp4") ? "m4a" : "webm";
+      verifyFile = new File(chunks.map(c => c.data),
+        session.sessionId + "." + extension, { type });
+      verifyAudioURL = URL.createObjectURL(verifyFile);
+      const audio = document.createElement("audio");
+      audio.controls = true;
+      audio.preload = "metadata";
+      audio.style.width = "100%";
+      audio.src = verifyAudioURL;
+      audio.addEventListener("error", () => verifyMessage(
+        "音声の再生に失敗しました。中断音声はコンテナが未完結の可能性があります。"));
+      audio.addEventListener("loadedmetadata", () => verifyMessage(
+        "音声メタデータ読込成功。再生ボタンで確認してください。増幅倍率の保証ではありません。"));
+      const link = document.createElement("a");
+      link.href = verifyAudioURL;
+      link.download = verifyFile.name;
+      link.textContent = "音声ファイルを保存";
+      link.style.cssText = "display:block;padding:16px 0;color:#9bd5ff";
+      verifyPanel.querySelector("[data-files]").append(audio, link);
+      let canShare = false;
+      try {
+        canShare = Boolean(navigator.share && navigator.canShare &&
+          navigator.canShare({ files: [verifyFile] }));
+      } catch (_) {}
+      verifyPanel.querySelector("[data-share]").disabled = !canShare;
+      verifyPanel.querySelector("[data-decode]").disabled =
+        verifyFile.size > VERIFY_DECODE_LIMIT;
+      verifyMessage("音声を用意しました。" +
+        (session.audioFinalized ? "" : " 中断記録の再生は未保証です。") +
+        (verifyFile.size > VERIFY_DECODE_LIMIT ? " 振幅解析は16 MiB以下のみ対応。" : ""));
+    } catch (error) {
+      clearVerifyFiles();
+      verifyMessage(errorText(error));
+    } finally {
+      verifyBusy = false;
+      updateControls();
+    }
+  }
+
+  async function makeLevelsCSV() {
+    if (verifyBlocked() || !currentSession) return;
+    const session = currentSession;
+    verifyBusy = true;
+    updateControls();
+    try {
+      const batches = await sessionItems("profileBins", session.sessionId);
+      const rows = batches.filter(b => b.kind === "audio_levels_v06")
+        .flatMap(b => b.rows).sort((a, b) => a.offsetMs - b.offsetMs);
+      if (!rows.length) {
+        throw new Error("計測ログがありません。v06で新しく録音してください。");
+      }
+      const keys = ["timestamp", "offsetMs", "gapMs", "gainLinear", "status",
+        "inputRms", "inputPeak", "inputDbFS", "outputRms", "outputPeak",
+        "outputDbFS", "outputOverFullScaleFraction", "motionG"];
+      const csv = "\ufeff" + keys.join(",") + "\r\n" +
+        rows.map(row => keys.map(key => row[key] ?? "").join(",")).join("\r\n");
+      if (verifyCSVURL) URL.revokeObjectURL(verifyCSVURL);
+      verifyCSVURL = URL.createObjectURL(new Blob([csv],
+        { type: "text/csv;charset=utf-8" }));
+      const link = document.createElement("a");
+      link.href = verifyCSVURL;
+      link.download = session.sessionId + "_levels.csv";
+      link.textContent = "計測ログCSVを保存（" + rows.length + "観測）";
+      link.style.cssText = "display:block;padding:16px 0;color:#9bd5ff";
+      const container = verifyPanel.querySelector("[data-csv]");
+      container.replaceChildren(link);
+      verifyMessage("CSVを用意しました。100ms周期の観測ログです。" +
+        "解析窓は別々で、連続区間集計や厳密な倍率測定ではありません。");
+    } catch (error) { verifyMessage(errorText(error)); }
+    finally { verifyBusy = false; updateControls(); }
+  }
+
+  async function decodeSavedAudio() {
+    if (verifyBlocked() || !verifyFile || verifyFile.size > VERIFY_DECODE_LIMIT) return;
+    const file = verifyFile;
+    verifyBusy = true;
+    updateControls();
+    try {
+      const Constructor = window.AudioContext || window.webkitAudioContext;
+      verifyDecodeContext = new Constructor();
+      verifyMessage("保存音声をデコードして解析中…");
+      const buffer = await verifyDecodeContext.decodeAudioData(await file.arrayBuffer());
+      let sum = 0, peak = 0, nearFullScale = 0;
+      const count = buffer.length * buffer.numberOfChannels;
+      if (!count) throw new Error("デコードした音声が空です。");
+      for (let c = 0; c < buffer.numberOfChannels; c++) {
+        for (const x of buffer.getChannelData(c)) {
+          sum += x * x;
+          peak = Math.max(peak, Math.abs(x));
+          if (Math.abs(x) >= 0.999) nearFullScale++;
+        }
+      }
+      const rms = Math.sqrt(sum / count);
+      verifyMessage("保存音声の解析成功：長さ " + buffer.duration.toFixed(2) +
+        "秒／" + buffer.numberOfChannels + "ch／RMS " + rms.toFixed(6) +
+        "／" + (rms > 0 ? (20 * Math.log10(rms)).toFixed(2) : "-∞") +
+        " dBFS／ピーク " + peak.toFixed(6) +
+        "／フルスケール近傍 " + (100 * nearFullScale / count).toFixed(3) +
+        "%。これはデコード後の実測振幅です。元入力との倍率は未確定。" +
+        "ピーク値だけで音割れは断定できません。");
+    } catch (error) {
+      verifyMessage("保存音声の解析失敗：" + errorText(error));
+    } finally {
+      if (verifyDecodeContext) {
+        try { await verifyDecodeContext.close(); } catch (_) {}
+        verifyDecodeContext = null;
+      }
+      verifyBusy = false;
+      updateControls();
+    }
+  }
+
+  function installAudioVerifyUI() {
+    verifyPanel = document.createElement("section");
+    verifyPanel.id = "somnolog-audio-verify";
+    verifyPanel.className = "panel";
+    const heading = document.createElement("h3");
+    heading.textContent = "保存音声・録音レベルの確認";
+    const note = document.createElement("p");
+    note.className = "note";
+    note.textContent = "音声読込128 MiBまで／振幅解析16 MiBまで。" +
+      "解析時はデコード後のメモリを使用します。" +
+      "旧記録の音声も取り出せますが、旧記録の計測ログはありません。";
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    function button(text, handler, attribute) {
+      const node = document.createElement("button");
+      node.type = "button";
+      node.className = "action secondary";
+      node.textContent = text;
+      if (attribute) node.setAttribute(attribute, "");
+      node.addEventListener("click", handler);
+      actions.append(node);
+      return node;
+    }
+    button("保存音声を読み込む", () => void loadSavedAudio());
+    button("計測ログCSVを用意", () => void makeLevelsCSV());
+    const share = button("読み込んだ音声を共有", async () => {
+      if (verifyBlocked() || !verifyFile || !navigator.share) return;
+      try {
+        await navigator.share({ files: [verifyFile], title: "SomnoLog録音" });
+      } catch (error) {
+        if (error.name !== "AbortError") verifyMessage(errorText(error));
+      }
+    }, "data-share");
+    share.disabled = true;
+    const decode = button("保存音声のRMS・ピークを解析",
+      () => void decodeSavedAudio(), "data-decode");
+    decode.disabled = true;
+    const files = document.createElement("div");
+    files.setAttribute("data-files", "");
+    const csv = document.createElement("div");
+    csv.setAttribute("data-csv", "");
+    const status = document.createElement("p");
+    status.className = "note";
+    status.setAttribute("data-status", "");
+    status.setAttribute("role", "status");
+    verifyPanel.append(heading, note, actions, files, csv, status);
+    el("record-screen").insertBefore(verifyPanel,
+      el("record-screen").querySelector(".bottom"));
+
+    const originalSummary = renderSummary;
+    renderSummary = function(session) {
+      originalSummary(session);
+      resetVerifySelection(session);
+    };
+    const originalRecords = renderRecords;
+    renderRecords = function() {
+      originalRecords();
+      el("record-list").querySelectorAll("[data-record-id]").forEach(card => {
+        const node = document.createElement("button");
+        node.type = "button";
+        node.className = "action secondary";
+        node.textContent = "この記録の音声を確認";
+        node.addEventListener("click", () => {
+          if (verifyBlocked()) return;
+          const session = records.find(s => s.sessionId === card.dataset.recordId);
+          if (!session) return;
+          renderSummary(session);
+          showScreen("record-screen");
+          void loadSavedAudio();
+        });
+        card.append(node);
+      });
+    };
+    const notice = document.createElement("p");
+    notice.className = "note";
+    const policy = recordingGainPolicy();
+    notice.textContent = "録音ゲイン設定：" + policy.gainLinear +
+      "倍（" + policy.deviceClass + "）。メーターは増幅前。保存音声の倍率は未検証。";
+    el("capture-heading").parentElement.append(notice);
+    window.addEventListener("pagehide", clearVerifyFiles);
+  }
+  installAudioVerifyUI();
+  
 startMeterTimer();
 
 // SOMNOLOG_VISIBLE_UPDATE_UI_01
@@ -2604,7 +2577,7 @@ el("capture-heading").title = "SomnoLog " + APP_VERSION;
 
 function blocked() {
 return Boolean(recording || starting || stopping ||
-pendingChunks || updating || disposed);
+pendingChunks || updating || verifyBusy || disposed);
 }
 
 function refresh() {
@@ -2667,8 +2640,6 @@ installVisibleUpdateUI();
 
 void initialize();
 })();
-
-
 
 
 </script>
