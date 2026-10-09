@@ -1,2647 +1,357 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SomnoLog</title>
-  <style>
-    :root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans JP",sans-serif;background:#101419;color:#f0eee6}
-    *{box-sizing:border-box}body{margin:0}button{font:inherit;cursor:pointer}
-    [hidden]{display:none!important}button:disabled{cursor:not-allowed}
-    button:focus-visible,[tabindex]:focus-visible{outline:3px solid #9bd5ff;outline-offset:4px}
-    #capture-screen{width:100%;max-width:480px;min-height:100svh;margin:auto;padding:28px 20px;display:flex;flex-direction:column;gap:28px}
-    #capture-screen h1{margin:0;font-size:23px;letter-spacing:.02em}
-    #capture-screen .meters{padding:22px;background:#192029;border:1px solid #2c3744;border-radius:20px}
-    #capture-screen .signal+.signal{margin-top:26px}
-    #capture-screen .label{margin-bottom:10px;color:#bec8d3;font-size:14px}
-    #capture-screen .wave{height:72px;background:#111820;border-radius:12px;overflow:hidden}
-    #capture-screen svg{width:100%;height:100%;display:block}
-    #capture-screen .permission{width:100%;min-height:50px;margin-top:12px;padding:12px;background:#253c50;color:#e5f1fb;border:1px solid #4a7596;border-radius:12px;font-size:14px;font-weight:600}
-    #capture-screen .permission:hover{background:#304c64}
-    #capture-screen .controls{margin-top:auto;display:grid;gap:12px}
-    #capture-screen .row{display:grid;grid-template-columns:2fr 1fr;gap:12px}
-    #capture-screen .control{min-height:62px;border:1px solid #3c495a;border-radius:15px;font-size:17px;font-weight:600}
-    #capture-screen .start{background:#84b9cf;color:#10202a;border-color:#84b9cf}
-    #capture-screen .start:disabled{background:#294354;color:#99aebb;border-color:#355268}
-    #capture-screen .stop{background:#222a34;color:#8390a0}
-    #capture-screen .black{min-height:54px;background:#151b23;color:#8390a0;font-size:15px}
-    #capture-screen .history{min-height:54px;background:#253c50;color:#e5f1fb;border-color:#45576a;font-size:15px}
-    #capture-screen .history:disabled{opacity:.45}
-    #capture-screen .usage{width:100%;min-height:54px;padding:14px 20px;border:1px solid #726b59;border-radius:15px;background:#343129;color:#f3e7c9;font-size:15px;font-weight:600}
-    #capture-screen .usage:hover{background:#454034}
-    #usage-dialog,#preview-dialog{width:calc(100% - 32px);max-width:440px;max-height:85svh;overflow:auto;padding:26px;background:#192029;color:#f0eee6;border:1px solid #3c495a;border-radius:20px}
-    dialog::backdrop{background:rgba(0,0,0,.75)}
-    #usage-dialog h2,#preview-dialog h2{margin:0 0 22px;font-size:21px}
-    #usage-dialog ol{margin:0;padding-left:24px}
-    #usage-dialog li{padding-left:4px;margin-bottom:18px;line-height:1.8;color:#d1d7de}
-    #usage-dialog li strong{color:#f0eee6}
-    #usage-dialog p,#preview-dialog p{line-height:1.8;color:#d1d7de}
-    .close{width:100%;min-height:48px;margin-top:12px;background:#293644;color:#f0eee6;border:1px solid #45576a;border-radius:12px}
-    .app{max-width:480px;min-height:100svh;margin:auto;padding:28px 20px;display:flex;flex-direction:column;gap:24px}
-    .app .row{display:flex;align-items:center;justify-content:space-between;gap:12px}
-    .app h1{margin:0;font-size:23px}.app h2{margin:22px 0 10px;font-size:20px}
-    .badge{padding:7px 12px;border-radius:20px;background:#263b38;color:#bfdbd1;font-size:13px;white-space:nowrap}
-    .subtitle,.note{margin:0;color:#aebbc9;font-size:13px;line-height:1.8}
-    .note{font-size:11px;color:#8392a2}
-    .panel,.card{background:#192029;border:1px solid #2c3744;border-radius:16px;padding:18px}
-    .action{width:100%;min-height:56px;padding:14px 18px;border-radius:15px;border:1px solid #45576a;font-weight:600;font-size:16px}
-    .action:disabled{opacity:.45}
-    .primary{background:#84b9cf;color:#10202a;border-color:#84b9cf}
-    .secondary{background:#253c50;color:#e5f1fb}.back{background:#1b232d;color:#d3dde7}
-    .app .usage{background:#343129;color:#f3e7c9;border-color:#726b59}
-    .actions,.bottom{display:grid;gap:12px}.bottom{margin-top:auto;padding-top:12px}
-    .record-range{margin:0;padding:14px 10px;border-left:3px solid #84b9cf;background:#192029;border-radius:0 12px 12px 0;color:#f3e7c9;font-size:13px;line-height:1.8;white-space:nowrap;overflow-x:auto}
-    .duration{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-top:16px}
-    .app .label{color:#b7c2ce;font-size:14px}
-    .value{color:#f3e7c9;font-size:23px;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
-    .value small{font-size:14px;font-weight:400}
-    .totals{margin:18px 0 0;padding-top:16px;border-top:1px solid #303b48;display:grid;grid-template-columns:1fr auto;gap:18px 12px;align-items:baseline}
-    dt{color:#c5cfd9;font-size:14px}dd{margin:0;text-align:right}
-    .switch{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:#101923;border:1px solid #303b48;border-radius:13px;margin-bottom:12px}
-    .switch button{min-height:44px;padding:10px 4px;border:0;border-radius:9px;background:transparent;color:#aebbc9;font-size:14px}
-    .switch button.active{background:#253c50;color:#e5f1fb}
-    .hint{margin:0 0 16px;color:#b7c2ce;font-size:12px;line-height:1.8;min-height:22px}
-    .month-nav{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:16px}
-    .month-title{margin:0;font-size:20px}
-    .arrow{width:44px;min-height:44px;padding:0;background:#25313e;color:#d3dde7;border:1px solid #45576a;border-radius:12px;font-size:25px}
-    .weekdays,.days{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
-    .weekdays{margin-bottom:8px}.weekdays span{text-align:center;padding:5px 0;font-size:12px;color:#aebbc9}
-    .weekdays .sun,.day.sun{color:#d8a6a1}.weekdays .sat,.day.sat{color:#84b9cf}
-    .day{min-height:48px;padding:6px 0;border:1px solid transparent;border-radius:10px;background:transparent;color:#e0e6ec;font-size:15px;font-weight:400;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px}
-    .day:hover{background:#263341}.day.today{border-color:#64798b}
-    .day.in-range{background:#253c50;color:#e5f1fb}
-    .day.selected{background:#84b9cf;color:#10202a;font-weight:700;border-color:#84b9cf}
-    .dot{height:5px;width:5px;border-radius:50%;background:#84b9cf}
-    .dot.empty{background:transparent}.selected .dot:not(.empty){background:#10202a}
-    .legend{margin-top:16px;padding-top:14px;border-top:1px solid #303b48;display:flex;align-items:center;gap:8px;color:#aebbc9;font-size:11px;flex-wrap:wrap}
-    .legend-today{width:12px;height:12px;border:1px solid #64798b;border-radius:3px;margin-left:8px}
-    .range-tools{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:14px}
-    .range-label{color:#bfdbd1;font-size:12px;line-height:1.7}
-    .reset{min-height:36px;padding:7px 10px;background:#1b232d;color:#aebbc9;font-size:12px;border:1px solid #45576a;border-radius:8px}
-    .section-title{font-size:17px;margin:0 0 12px;line-height:1.7}
-    .share-panel{padding:16px;background:#192029;border:1px solid #2c3744;border-radius:16px;margin:16px 0}
-    .share-panel p{margin:0 0 12px;font-size:12px;color:#aebbc9;line-height:1.8}
-    .card{margin-bottom:12px}.saved{font-size:12px;color:#bfdbd1}
-    .card-time{margin:12px 0 0;color:#f3e7c9;font-size:13px;line-height:1.8;font-variant-numeric:tabular-nums}
-    .timeline{margin:18px 0 0;padding-top:16px;border-top:1px solid #303b48}
-    .timeline-header{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:12px}
-    .timeline-title{font-size:14px;font-weight:600;color:#c5cfd9}
-    .sample{font-size:10px;color:#c9bea6;background:#343129;padding:3px 6px;border-radius:5px}
-    .chart{background:#101923;border:1px solid #2c3744;border-radius:12px;overflow:hidden;padding:10px 6px 8px}
-    .chart svg{display:block;width:100%;height:auto}
-    .endpoints{display:flex;justify-content:space-between;margin-top:10px;font-size:12px;line-height:1.7;color:#aebbc9}
-    .endpoints strong{display:block;color:#f3e7c9;font-size:13px;font-weight:500}
-    .endpoints>div:last-child{text-align:right}
-    .empty-state{border:1px dashed #3c495a;border-radius:16px;padding:24px 14px;text-align:center;font-size:14px;color:#aebbc9;line-height:1.8}
-    .flow-dialog{width:calc(100% - 32px);max-width:440px;max-height:calc(100svh - 40px);overflow-y:auto;background:#192029;color:#f0eee6;border:1px solid #3c495a;border-radius:20px;padding:24px}
-    .flow-dialog h2{margin:0 0 12px;font-size:21px}
-    .flow-dialog p,.flow-dialog li{font-size:13px;line-height:1.8;color:#c5cfd9}
-    .zip-summary{padding:14px;background:#101923;border-radius:12px;margin:16px 0}
-    .zip-summary strong{display:block;color:#f3e7c9;font-size:15px;margin-bottom:6px}
-    .filename{font-size:11px;color:#aebbc9;overflow-wrap:anywhere}
-    .choice{display:block;text-align:left}
-    .choice small{display:block;font-size:12px;font-weight:400;margin-top:6px;line-height:1.7}
-    .footer{margin-top:20px;padding-top:18px;border-top:1px solid #303b48}
-    .warning{padding:12px;border-left:3px solid #b9a67e;background:#292820;border-radius:0 8px 8px 0}
-    #black-screen{position:fixed;inset:0;z-index:100;background:#080a0c;display:flex;align-items:center;justify-content:center;padding:24px;touch-action:manipulation}
-    #black-screen[data-clock-state="off"]{background:#000}
-    .black-content{width:100%;max-width:400px;text-align:center}
-    #black-clock{display:block;font-size:72px;font-weight:300;letter-spacing:2px;font-variant-numeric:tabular-nums;color:#756f61}
-    #black-screen[data-clock-state="bright"] #black-clock{color:#f3e7c9}
-    #black-back{min-height:48px;margin-top:28px;padding:12px 24px;background:transparent;border:1px solid #514c41;border-radius:14px;color:#aaa18e;font-size:14px}
-    #black-screen[data-clock-state="off"] .black-content{visibility:hidden}
-    @media(max-width:360px){
-      .app{padding:24px 14px}.calendar{padding:14px 10px}.day{min-height:44px}
-      .card{padding:14px}.flow-dialog{padding:20px}.record-range{font-size:12px}#black-clock{font-size:60px}
-    }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SomnoLog v07生成</title>
+<style>
+body{margin:0;background:#101419;color:#f0eee6;font-family:system-ui,sans-serif}
+main{max-width:780px;margin:auto;padding:24px}
+section{background:#192029;padding:20px;border:1px solid #354350;border-radius:16px}
+p,pre{line-height:1.8}pre{white-space:pre-wrap;overflow-wrap:anywhere}
+input{display:block;margin:16px 0;width:100%}
+button{padding:16px;border:0;border-radius:12px;background:#84b9cf;font:inherit;font-weight:bold}
+button:disabled{opacity:.4}
+a{display:block;padding:20px 0;color:#9bd5ff}
+</style>
 </head>
 <body>
-  <!--
-    記録開始画面は提供HTMLを基準とする。
-    今回追加: history-button / .history / openCalendar(from) / calendarReturnScreen
-    元のstart、usage-dialog、preview-dialog、data-permissionを維持。
-    record-screenは記録終了画面。
-    全イベントはscript内。権限・録音・保存・ZIP生成はUIデモのみ。
-  -->
-  <main id="capture-screen" aria-labelledby="capture-heading">
-    <header><h1 id="capture-heading" tabindex="-1">SomnoLog</h1></header>
-    <section class="meters" aria-label="マイクと体動の入力メーター">
-      <div class="signal">
-        <div class="label">マイク</div>
-        <div class="wave">
-          <svg id="microphone-wave" viewBox="0 0 320 72" preserveAspectRatio="none" role="img" aria-label="マイク入力の表示領域">
-            <path d="M0 18H320 M0 54H320" stroke="#202d3b" fill="none"/>
-            <path id="microphone-path" d="M0 36H320" stroke="#7190a6" stroke-width="2" fill="none"/>
-          </svg>
-        </div>
-        <button id="microphone-permission" class="permission" type="button" data-permission="microphone">マイクを許可</button>
-      </div>
-      <div class="signal">
-        <div class="label">体動</div>
-        <div class="wave">
-          <svg id="motion-wave" viewBox="0 0 320 72" preserveAspectRatio="none" role="img" aria-label="体動入力の表示領域">
-            <path d="M0 18H320 M0 54H320" stroke="#202d3b" fill="none"/>
-            <path id="motion-path" d="M0 36H320" stroke="#7190a6" stroke-width="2" fill="none"/>
-          </svg>
-        </div>
-        <button id="motion-permission" class="permission" type="button" data-permission="motion">モーションセンサーを許可</button>
-      </div>
-    </section>
-    <section class="controls" aria-label="記録操作">
-      <div class="row">
-        <button id="start" class="control start" type="button" disabled>記録開始</button>
-        <button id="stop-button" class="control stop" type="button" disabled>停止</button>
-      </div>
-      <button id="black-button" class="control black" type="button" disabled>黒画面に切り替え</button>
-      <button id="history-button" class="control history" type="button">履歴を見る</button>
-      <button id="capture-help-button" class="usage" type="button" aria-haspopup="dialog">使い方を見る</button>
-    </section>
-  </main>
-
-  <main id="record-screen" class="app" aria-labelledby="result-heading" hidden>
-    <header>
-      <div class="row"><h1>SomnoLog</h1><span class="badge">記録終了</span></div>
-      <h2 id="result-heading" tabindex="-1">睡眠記録</h2>
-      <p id="result-range" class="record-range">昨日（10月6日）23:10 → 今日（10月7日）06:42</p>
-      <p id="result-year" class="note" style="margin-top:10px">2026年の記録</p>
-    </header>
-    <section class="panel" aria-label="記録の概要">
-      <div class="duration" style="margin-top:0">
-        <span class="label">記録時間</span>
-        <span id="result-duration" class="value">7<small>時間</small>32<small>分</small></span>
-      </div>
-      <p id="result-time-detail" class="note" style="margin-top:8px">10月6日 23:10 → 10月7日 06:42</p>
-      <dl class="totals">
-        <dt>音の検出時間</dt><dd id="sound-duration" class="value">18<small>分</small>24<small>秒</small></dd>
-        <dt>体動の検出時間</dt><dd id="motion-duration" class="value">6<small>分</small>12<small>秒</small></dd>
-      </dl>
-    </section>
-    <section class="actions">
-      <button id="save-button" class="action primary">保存・共有</button>
-      <button id="calendar-button" class="action secondary">記録カレンダーを見る</button>
-    </section>
-    <section class="bottom">
-      <button id="record-back" class="action back">記録画面に戻る</button>
-      <button id="result-help-button" class="action usage" data-help>使い方を見る</button>
-    </section>
-  </main>
-
-  <main id="calendar-screen" class="app" aria-labelledby="calendar-heading" hidden>
-    <header>
-      <div class="row"><h1>SomnoLog</h1><span class="badge">保存記録</span></div>
-      <h2 id="calendar-heading" tabindex="-1">記録カレンダー</h2>
-      <p class="subtitle">日付を選ぶと、睡眠記録を確認できます。</p>
-    </header>
-    <section class="panel calendar" aria-label="日付と期間の選択">
-      <div class="switch" aria-label="表示方法">
-        <button id="single-mode" class="active" aria-pressed="true">1日</button>
-        <button id="range-mode" aria-pressed="false">期間を選択</button>
-      </div>
-      <p id="selection-hint" class="hint" aria-live="polite"></p>
-      <div class="month-nav">
-        <button id="prev-month" class="arrow" aria-label="前の月">‹</button>
-        <h3 id="month-title" class="month-title" aria-live="polite"></h3>
-        <button id="next-month" class="arrow" aria-label="次の月">›</button>
-      </div>
-      <div class="weekdays" aria-hidden="true">
-        <span class="sun">日</span><span>月</span><span>火</span><span>水</span><span>木</span><span>金</span><span class="sat">土</span>
-      </div>
-      <div id="days" class="days"></div>
-      <div class="legend"><span class="dot"></span>保存記録あり<span class="legend-today"></span>今日</div>
-      <div id="range-tools" class="range-tools" hidden>
-        <span id="range-label" class="range-label"></span>
-        <button id="reset-range" class="reset">選び直す</button>
-      </div>
-    </section>
-    <section aria-labelledby="selected-heading">
-      <h3 id="selected-heading" class="section-title"></h3>
-      <div id="record-list" aria-live="polite"></div>
-      <div id="calendar-share-panel" class="share-panel">
-        <p>選択した日のログを医師と共有します</p>
-        <button id="share-button" class="action primary">ログを医師と共有</button>
-      </div>
-      <p class="note">※記録・波形はサンプルです。記録開始時刻は、実際の入眠時刻を示すものではありません。</p>
-    </section>
-    <section class="bottom">
-      <button id="calendar-back" class="action back">記録画面に戻る</button>
-      <button id="calendar-help-button" class="action usage" data-help>使い方を見る</button>
-    </section>
-  </main>
-
-  <section id="black-screen" data-clock-state="dim" tabindex="0" aria-label="黒画面。タップまたはEnterで時計を表示" hidden>
-    <div class="black-content">
-      <time id="black-clock">00:00</time>
-      <button id="black-back" type="button">記録画面に戻る</button>
-    </div>
-  </section>
-
-  <dialog id="usage-dialog" aria-labelledby="usage-title">
-    <h2 id="usage-title">使い方</h2>
-    <ol>
-      <li><strong>スマホを置く</strong><br>枕の近くの、スマホが落ちたりずれたりしない安定した場所に置いてください。</li>
-      <li><strong>電源につなぐ</strong><br>充電ケーブルをつないでください。スマホは枕や布団の下に入れず、ケーブルが体に絡まないようにしてください。</li>
-      <li><strong>必要な権限を許可する</strong><br>「マイクを許可」「モーションセンサーを許可」が表示された場合は、ボタンを押して許可してください。許可済みの場合、ボタンは表示されません。</li>
-      <li><strong>メーターを見る</strong><br>音や動きに合わせて、マイク・体動のメーターが反応することを確認してください。</li>
-      <li><strong>記録を始めて、お休みください</strong><br>準備が整ったら「記録開始」を押してください。「黒画面に切り替え」で画面の光を抑えられます。</li>
-      <li><strong>暗い画面で時刻を見る</strong><br>中央に大きな時刻を、明るさを抑えたクリーム色で表示します。見えにくいときはタップすると文字が明るくなり、約3秒後に真っ黒になります。再びタップすると時刻を表示します。</li>
-    </ol>
-    <form method="dialog"><button class="close">閉じる</button></form>
-  </dialog>
-
-  <dialog id="preview-dialog" aria-labelledby="preview-title">
-    <h2 id="preview-title">デザインプレビュー</h2>
-    <p>権限取得後の画面状態を確認できます。このプレビューでは実際の録音は行いません。</p>
-    <form method="dialog"><button class="close">閉じる</button></form>
-  </dialog>
-
-  <dialog id="save-dialog" class="flow-dialog" aria-labelledby="save-title">
-    <h2 id="save-title">保存・共有</h2>
-    <p id="save-range" class="record-range">10月6日 23:10 → 10月7日 06:42</p>
-    <div class="actions" style="margin-top:18px">
-      <button id="save-calendar" class="action primary choice">記録をカレンダーに保存<small>日付から睡眠記録を確認できます</small></button>
-      <button id="share-current" class="action secondary choice">音声付きデータを共有<small>医師への送付・SomnoGraph用</small></button>
-    </div>
-    <p id="save-status" class="note" role="status">※プレビューでは実際の保存は行いません。</p>
-    <div class="footer"><form method="dialog"><button id="save-close" class="action back">閉じる</button></form></div>
-  </dialog>
-
-  <dialog id="share-dialog" class="flow-dialog" aria-labelledby="share-title">
-    <h2 id="share-title">ログを医師と共有</h2>
-    <p>選択した記録を、1つのZIPファイルにまとめて共有します。</p>
-    <div class="zip-summary">
-      <strong id="zip-period"></strong>
-      <p id="zip-count" style="margin:0 0 10px"></p>
-      <div id="zip-name" class="filename"></div>
-    </div>
-    <p><strong>ZIPにまとめるデータ（実装予定）</strong></p>
-    <ul>
-      <li>各記録の開始・停止日時、記録時間</li>
-      <li>音量・体動の時系列データ（CSV）</li>
-      <li>記録一覧（CSV）</li>
-    </ul>
-    <p class="warning">音声ファイルは、端末内に元音声が残っている場合のみ添付できます。波形データから音声を復元することはできません。</p>
-    <p class="note">※このプレビューではZIP作成・保存・送信は行いません。</p>
-    <div class="actions">
-      <button id="zip-save" class="action primary choice">ZIPを作成して保存<small>保存後、メール添付や共有リンクで送付</small></button>
-      <button id="clinic-button" class="action secondary">診療所の窓口で行う</button>
-    </div>
-    <p id="share-status" class="note" role="status"></p>
-    <progress id="zip-progress" max="100" value="0" aria-label="ZIP作成の進捗" hidden></progress>
-    <div class="footer"><form method="dialog"><button id="share-close" class="action back">カレンダーに戻る</button></form></div>
-  </dialog>
-
-  <dialog id="message" class="flow-dialog" aria-labelledby="message-title">
-    <h2 id="message-title"></h2><p id="message-body"></p>
-    <form method="dialog"><button id="message-close" class="action back">閉じる</button></form>
-  </dialog>
-
-  <script>
-
-
+<main>
+<h1>SomnoLog v07生成</h1>
+<p>今回添付したv06本体を選択してください。音・体動の集計、短時間のログ保存、取得状態の表示を修正します。元ファイル・既存DBは削除しません。</p>
+<section>
+<label for="source">SomnoLog_v20261009-06.html</label>
+<input id="source" type="file" accept=".html,text/html">
+<button id="build" disabled>v07を生成</button>
+<div id="download"></div>
+<pre id="report" role="status">v06を選択してください。</pre>
+</section>
+<p>音の判定：録音開始後2秒以内の有効な音量観測の中央値＋10 dB。体動の判定：端末の動的加速度0.05 g以上。医療的な判定ではありません。欠測を「検出なし」に置き換えません。</p>
+</main>
+<script>
 (() => {
-"use strict";
-
-const APP_VERSION = "v20261009-06";
-const BUILD_MARKER = "SOMNOLOG_FROZEN_UI_PHASE2";
-const REPOSITORY = "matsuodentalassociation/sleep_track";
-const REPOSITORY_BRANCH = "main";
-const REPOSITORY_FILE = "index.html";
-const DB_NAME = "SomnoLog";
-const DB_VERSION = 1;
-const CHUNK_INTERVAL_MS = 30000;
-const REQUESTED_SAMPLE_RATE = 22050;
-const REQUESTED_BITRATE = 32000;
-const LEASE_KEY = "__somnolog_runtime_lease__";
-const LEASE_MS = 15000;
-const el = id => document.getElementById(id);
-const pad = n => String(n).padStart(2, "0");
-const ownerId = crypto.randomUUID
-? crypto.randomUUID()
-: Array.from(crypto.getRandomValues(new Uint32Array(4)))
-.map(n => n.toString(16)).join("-");
-const sessionSuffix = () =>
-Array.from(crypto.getRandomValues(new Uint8Array(6)))
-.map(n => n.toString(16).padStart(2, "0")).join("");
-
-// DOMが実測値や状態で変わる前に、更新互換性確認用の正本を保持する。
-function frozenShell(doc) {
-const copy = doc.documentElement.cloneNode(true);
-copy.querySelectorAll("script").forEach(node => node.remove());
-const walker = doc.createTreeWalker(copy, NodeFilter.SHOW_COMMENT);
-const comments = [];
-while (walker.nextNode()) comments.push(walker.currentNode);
-comments.forEach(node => node.remove());
-return copy.outerHTML;
-}
-const expectedShell = frozenShell(document);
-
-let db = null;
-let disposed = false;
-let ownsRuntime = false;
-let releasingRuntime = null;
-let leaseTimer = null;
-let retryTimer = null;
-let heartbeatTimer = null;
-let chunkTimer = null;
-let clockTimer = null;
-let clockHideTimer = null;
-let wakeLock = null;
-let stream = null;
-let audioContext = null;
-let ready = { microphone: false, motion: false };
-let motionListenerInstalled = false;
-let lastMotionEvent = null;
-let motionWaiter = null;
-let recording = false;
-let starting = false;
-let stopping = false;
-let updating = false;
-let activeSession = null;
-let currentSession = null;
-let recorder = null;
-let recorderStopPromise = null;
-let recorderStopResolve = null;
-let recordingStartMono = 0;
-let lastChunkEventOffset = 0;
-let sequence = 0;
-let pendingChunks = 0;
-let saveChain = Promise.resolve();
-let recordingFault = null;
-let records = [];
-let calendarReturnScreen = "capture-screen";
-const initialDate = new Date();
-const dateKey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
-const todayKey = () => {
-const n = new Date();
-return dateKey(n.getFullYear(), n.getMonth(), n.getDate());
-};
-let month = new Date(initialDate.getFullYear(), initialDate.getMonth(), 1);
-let mode = "single";
-let selected = todayKey();
-let rangeStart = null;
-let rangeEnd = null;
-
-
-// v03: 実入力メーター。検出時間集計・ログ保存は別工程。
-let meterSource = null;
-let meterAnalyser = null;
-let meterSink = null;
-let meterSamples = null;
-let meterTimer = null;
-let motionPermissionGranted = false;
-let motionMono = null;
-let motionValueG = null;
-let gravityEstimate = null;
-let gravityStartedMono = null;
-let motionMethod = "";
-const motionHistory = Array(80).fill(null);
-const microphoneLabel = el("microphone-wave")
-.closest(".signal").querySelector(".label");
-const motionLabel = el("motion-wave")
-.closest(".signal").querySelector(".label");
-
-function missingMeter(kind, message) {
-const label = kind === "microphone" ? microphoneLabel : motionLabel;
-const name = kind === "microphone" ? "マイク" : "体動";
-label.textContent = name + " — " + message;
-el(kind + "-wave").setAttribute("aria-label", name + "：" + message);
-el(kind + "-path").setAttribute("d", "");
-}
-
-function disconnectMicrophoneMeter() {
-for (const node of [meterSource, meterAnalyser, meterSink]) {
-if (node) { try { node.disconnect(); } catch (_) {} }
-}
-meterSource = meterAnalyser = meterSink = meterSamples = null;
-missingMeter("microphone", "入力なし／未許可");
-}
-
-function connectMicrophoneMeter() {
-disconnectMicrophoneMeter();
-if (!stream || !audioContext || audioContext.state === "closed") {
-throw new Error("マイク解析の接続先がありません。");
-}
-meterSource = audioContext.createMediaStreamSource(stream);
-meterAnalyser = audioContext.createAnalyser();
-meterAnalyser.fftSize = 2048;
-meterAnalyser.smoothingTimeConstant = 0;
-meterSamples = new Float32Array(meterAnalyser.fftSize);
-meterSink = audioContext.createGain();
-meterSink.gain.value = 0;
-meterSource.connect(meterAnalyser);
-meterAnalyser.connect(meterSink);
-// 無音出力でグラフを駆動。マイク音をスピーカーへ返さない。
-meterSink.connect(audioContext.destination);
-startMeterTimer();
-}
-
-function microphoneInputAvailable() {
-const track = stream && stream.getAudioTracks()[0];
-return Boolean(track && track.readyState === "live" && !track.muted
-&& meterAnalyser && audioContext && audioContext.state === "running");
-}
-
-function motionInputAvailable() {
-return Boolean(motionPermissionGranted && motionMono !== null
-&& performance.now() - motionMono < 2000
-&& Number.isFinite(motionValueG));
-}
-
-function finiteVector(value) {
-return Boolean(value &&
-[value.x, value.y, value.z].every(Number.isFinite));
-}
-
-function paintMicrophoneMeter() {
-if (!microphoneInputAvailable()) {
-const track = stream && stream.getAudioTracks()[0];
-const message = !track || track.readyState !== "live" ? "入力なし／未許可"
-: track.muted ? "入力途絶"
-: audioContext && audioContext.state !== "running"
-? "音声処理停止・マイクを再許可" : "解析未接続";
-missingMeter("microphone", message);
-return;
-}
-meterAnalyser.getFloatTimeDomainData(meterSamples);
-let energy = 0;
-for (const sample of meterSamples) {
-if (!Number.isFinite(sample)) {
-missingMeter("microphone", "解析値取得不能");
-return;
-}
-energy += sample * sample;
-}
-const rms = Math.sqrt(energy / meterSamples.length);
-const description = rms === 0
-? "デジタル無音・入力正常性は未判定"
-: (20 * Math.log10(rms)).toFixed(1) + " dBFS";
-microphoneLabel.textContent = "マイク — " + description;
-el("microphone-wave").setAttribute("aria-label",
-"マイク実波形：" + description +
-"。表示倍率8倍。校正された音圧値ではありません。");
-const points = [];
-for (let i = 0; i < 160; i++) {
-const sample = meterSamples[Math.floor(i * meterSamples.length / 160)];
-const y = 36 - Math.max(-1, Math.min(1, sample * 8)) * 30;
-points.push((i ? "L" : "M") + (i * 320 / 159).toFixed(1)
-+ " " + y.toFixed(1));
-}
-el("microphone-path").setAttribute("d", points.join(" "));
-}
-
-function paintMotionMeter() {
-const fresh = motionMono !== null &&
-performance.now() - motionMono < 2000;
-if (!motionPermissionGranted || !fresh || !Number.isFinite(motionValueG)) {
-motionHistory.fill(null);
-missingMeter("motion", !motionPermissionGranted ? "未許可／入力なし"
-: !fresh ? "入力途絶・取得不能" : "重力推定中");
-return;
-}
-motionHistory.shift();
-motionHistory.push(motionValueG);
-const description = motionValueG.toFixed(3) + " g（" + motionMethod + "）";
-motionLabel.textContent = "体動 — " + description;
-el("motion-wave").setAttribute("aria-label",
-"端末の動的加速度：" + description + "。表示上限0.25 g、直近約4秒。");
-const points = [];
-let connected = false;
-motionHistory.forEach((value, i) => {
-if (!Number.isFinite(value)) { connected = false; return; }
-const x = i * 320 / (motionHistory.length - 1);
-const y = 36 - Math.min(1, Math.max(0, value) / 0.25) * 30;
-points.push((connected ? "L" : "M") + x.toFixed(1) + " " + y.toFixed(1));
-connected = true;
-});
-el("motion-path").setAttribute("d", points.join(" "));
-}
-
-function startMeterTimer() {
-if (meterTimer !== null || disposed) return;
-meterTimer = setInterval(() => {
-if (disposed || document.visibilityState !== "visible") return;
-try { paintMicrophoneMeter(); }
-catch (error) { missingMeter("microphone", "解析失敗：" + error.name); }
-paintMotionMeter();
-updateControls();
-}, 50);
-}
-
-function stopMeterTimer() {
-clearInterval(meterTimer);
-meterTimer = null;
-}
-
-function errorText(error) {
-if (!error) return "原因不明";
-return `${error.name || "Error"}: ${error.message || String(error)}`;
-}
-
-function closeDialogs() {
-document.querySelectorAll("dialog[open]").forEach(dialog => dialog.close());
-}
-
-function showMessage(title, text) {
-if (disposed) return;
-closeDialogs();
-el("message-title").textContent = title;
-el("message-body").textContent = text;
-el("message").showModal();
-}
-
-function previewMessage(title, text) {
-closeDialogs();
-el("preview-title").textContent = title;
-el("preview-dialog").querySelector("p").textContent = text;
-el("preview-dialog").showModal();
-}
-
-function showScreen(id) {
-closeDialogs();
-clearTimeout(clockHideTimer);
-el("black-screen").hidden = true;
-document.body.style.overflow = "";
-["capture-screen", "record-screen", "calendar-screen"]
-.forEach(name => { el(name).hidden = name !== id; });
-window.scrollTo(0, 0);
-const heading = id === "capture-screen" ? "capture-heading"
-: id === "record-screen" ? "result-heading" : "calendar-heading";
-el(heading).focus();
-}
-
-function setDuration(node, ms) {
-node.replaceChildren();
-if (!Number.isFinite(ms)) {
-node.textContent = "取得できず";
-return;
-}
-const total = Math.max(0, Math.round(ms / 1000));
-const units = [
-[Math.floor(total / 3600), "時間"],
-[Math.floor(total % 3600 / 60), "分"],
-[total % 60, "秒"]
-];
-units.forEach(([number, unit]) => {
-node.append(document.createTextNode(String(number)));
-const small = document.createElement("small");
-small.textContent = unit;
-node.append(small);
-});
-}
-
-function datetime(ms) {
-if (!Number.isFinite(ms)) return "取得できず";
-const d = new Date(ms);
-return `${d.getFullYear()}/${pad(d.getMonth() + 1)}/${pad(d.getDate())} `
-+ `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-
-function isoLocal(ms) {
-const d = new Date(ms);
-const offset = -d.getTimezoneOffset();
-const sign = offset >= 0 ? "+" : "-";
-const absolute = Math.abs(offset);
-return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-+ `T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-+ `.${String(d.getMilliseconds()).padStart(3, "0")}`
-+ `${sign}${pad(Math.floor(absolute / 60))}:${pad(absolute % 60)}`;
-}
-
-function sessionDate(session) {
-const d = new Date(session.recording.startEpochMs);
-return dateKey(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
-function rangeText(session) {
-if (!session) return "記録なし";
-return `${datetime(session.recording.startEpochMs)} → `
-+ `${datetime(session.recording.endEpochMs)}`;
-}
-
-function renderSummary(session) {
-currentSession = session || null;
-el("result-range").textContent = rangeText(session);
-el("save-range").textContent = rangeText(session);
-el("save-button").disabled = !session;
-if (!session) {
-el("result-year").textContent = "記録なし";
-el("result-time-detail").textContent = "端末内に完了記録はありません。";
-setDuration(el("result-duration"), null);
-setDuration(el("sound-duration"), null);
-setDuration(el("motion-duration"), null);
-return;
-}
-const date = new Date(session.recording.startEpochMs);
-el("result-year").textContent =
-`${date.getFullYear()}年の記録／${session.appVersion}`;
-setDuration(el("result-duration"), session.recording.totalDurationMs);
-setDuration(el("sound-duration"), session.metrics.soundDetectedMs);
-setDuration(el("motion-duration"), session.metrics.motionDetectedMs);
-el("record-screen").querySelector(".badge").textContent =
-session.state === "recovered" ? "中断回復" : "記録終了";
-const mib = (session.audioBytes / 1048576).toFixed(2);
-el("result-time-detail").textContent =
-`${session.audioChunkCount}チャンク／音声 ${mib} MiB／`
-+ `音・体動集計はPhase 3未実装。`
-+ (session.state === "recovered"
-? "終了日時は最後に保存済みのチャンク境界です。未保存区間は不明。"
-: "")
-+ (session.fault ? ` 異常：${session.fault}` : "");
-el("save-status").textContent = session.calendarSaved
-? "カレンダー登録済み。音声とセッションは端末内に保存されています。"
-: "音声とセッションは端末内に保存済み。カレンダーへの登録は下のボタンで行います。";
-}
-
-function updateControls() {
-const busy = starting || stopping || updating || verifyBusy || disposed;
-const liveTrack = microphoneInputAvailable();
-ready.motion = motionInputAvailable();
-ready.microphone = Boolean(liveTrack);
-el("start").disabled = busy || recording || !db || !ownsRuntime
-|| !ready.microphone || !ready.motion;
-el("stop-button").disabled = !recording || stopping;
-el("black-button").disabled = !recording || stopping;
-el("history-button").disabled = recording || busy || !db;
-el("microphone-permission").disabled = recording || busy || !ownsRuntime;
-el("motion-permission").disabled = recording || busy || !ownsRuntime;
-el("microphone-permission").hidden = ready.microphone;
-el("motion-permission").hidden = ready.motion;
-}
-
-function openDatabase() {
-return new Promise((resolve, reject) => {
-const request = indexedDB.open(DB_NAME, DB_VERSION);
-request.onupgradeneeded = () => {
-const database = request.result;
-if (!database.objectStoreNames.contains("sessions")) {
-database.createObjectStore("sessions", { keyPath: "sessionId" });
-}
-for (const name of ["sessionLogs", "profileBins", "clips", "audioChunks"]) {
-if (!database.objectStoreNames.contains(name)) {
-const store = database.createObjectStore(name, { keyPath: "id" });
-store.createIndex("sessionId", "sessionId", { unique: false });
-}
-}
-};
-request.onblocked = () => {
-showMessage("保存領域の更新待ち",
-"旧版を開いている別タブを閉じてください。IndexedDBを更新できません。");
-};
-request.onerror = () => reject(request.error);
-request.onsuccess = () => {
-const database = request.result;
-const required = [
-"sessions", "sessionLogs", "profileBins", "clips", "audioChunks"
-];
-if (!required.every(name => database.objectStoreNames.contains(name))) {
-database.close();
-reject(new Error("既存IndexedDBのストア構成が正本仕様と異なります。削除せず停止しました。"));
-return;
-}
-database.onversionchange = () => {
-if (recording) emergencyStop(new Error("IndexedDBのバージョンが変更されました。"));
-database.close();
-db = null;
-updateControls();
-};
-resolve(database);
-};
-});
-}
-
-function transaction(names, mode, run) {
-return new Promise((resolve, reject) => {
-if (!db) {
-reject(new Error("IndexedDBが利用できません。"));
-return;
-}
-let result;
-let tx;
-try {
-tx = db.transaction(names, mode);
-tx.oncomplete = () => resolve(result);
-tx.onerror = () => reject(tx.error || new Error("保存トランザクション失敗"));
-tx.onabort = () => reject(tx.error || new Error("保存トランザクション中断"));
-run(tx, value => { result = value; });
-} catch (error) {
-if (tx) {
-try { tx.abort(); } catch (_) {}
-}
-reject(error);
-}
-});
-}
-
-function getRecord(store, key) {
-return transaction([store], "readonly", (tx, setResult) => {
-const request = tx.objectStore(store).get(key);
-request.onsuccess = () => setResult(request.result);
-});
-}
-
-function getSessions() {
-return transaction(["sessions"], "readonly", (tx, setResult) => {
-const request = tx.objectStore("sessions").getAll();
-request.onsuccess = () => setResult(request.result);
-});
-}
-
-function putSession(session) {
-return transaction(["sessions"], "readwrite", tx => {
-tx.objectStore("sessions").put(session);
-});
-}
-
-async function patientId() {
-const registered = await getRecord("clips", "somnolog_patient_id");
-if (registered) {
-const value = registered.patientId || registered.value;
-if (typeof value === "string" && value.trim()) return value.trim();
-}
-try {
-const stored = localStorage.getItem("somnolog_patient_id");
-if (stored && stored.trim()) return stored.trim();
-} catch (_) {}
-return "UNREGISTERED";
-}
-
-function claimLease() {
-return transaction(["clips"], "readwrite", (tx, setResult) => {
-const store = tx.objectStore("clips");
-const request = store.get(LEASE_KEY);
-request.onsuccess = () => {
-const previous = request.result;
-const now = Date.now();
-if (previous && previous.owner !== ownerId && previous.expiresAt > now) {
-setResult(false);
-return;
-}
-store.put({ id: LEASE_KEY, owner: ownerId, expiresAt: now + LEASE_MS });
-setResult(true);
-};
-});
-}
-
-async function renewLease() {
-if (!db || !ownsRuntime || disposed) return;
-try {
-const renewed = await claimLease();
-if (!renewed) {
-ownsRuntime = false;
-updateControls();
-emergencyStop(new Error("別タブが保存領域の使用権を取得しました。"));
-}
-} catch (error) {
-ownsRuntime = false;
-updateControls();
-emergencyStop(error);
-}
-}
-
-async function releaseLease() {
-if (!db) return;
-await transaction(["clips"], "readwrite", tx => {
-const store = tx.objectStore("clips");
-const request = store.get(LEASE_KEY);
-request.onsuccess = () => {
-if (request.result && request.result.owner === ownerId) {
-store.delete(LEASE_KEY);
-}
-};
-});
-}
-
-async function acquireRuntime() {
-if (disposed || !db || ownsRuntime) return;
-const tryAcquire = async () => {
-const success = await claimLease();
-if (!success) return false;
-ownsRuntime = true;
-clearInterval(leaseTimer);
-leaseTimer = setInterval(renewLease, 3000);
-await recoverSessions();
-await refreshRecords();
-updateControls();
-return true;
-};
-
-if (navigator.locks && navigator.locks.request) {
-await new Promise((resolve, reject) => {
-let resolved = false;
-navigator.locks.request(
-"somnolog-recording-runtime",
-{ mode: "exclusive", ifAvailable: true },
-async lock => {
-if (!lock) {
-resolved = true;
-resolve(false);
-return;
-}
-try {
-const success = await tryAcquire();
-if (!success) {
-resolved = true;
-resolve(false);
-return;
-}
-resolved = true;
-resolve(true);
-await new Promise(done => { releasingRuntime = done; });
-} catch (error) {
-if (!resolved) reject(error);
-else console.error(error);
-}
-}
-).catch(reject);
-});
-} else {
-await tryAcquire();
-}
-
-if (!ownsRuntime && !disposed) {
-updateControls();
-clearTimeout(retryTimer);
-retryTimer = setTimeout(() => {
-acquireRuntime().catch(error => showMessage("初期化失敗", errorText(error)));
-}, 3000);
-}
-}
-
-async function recoverSessions() {
-const sessions = await getSessions();
-let recoveredCount = 0;
-for (const session of sessions) {
-if (session.state !== "recording") continue;
-// 使用権を取れた後だけ回復する。別タブの録音を完了扱いにしない。
-const end = Number.isFinite(session.lastPersistedEpochMs)
-? session.lastPersistedEpochMs : session.recording.startEpochMs;
-session.state = "recovered";
-session.calendarSaved = true;
-session.recording.endEpochMs = end;
-session.recording.endTime = isoLocal(end);
-session.recording.totalDurationMs =
-Math.max(0, end - session.recording.startEpochMs);
-session.metrics.dataStatus = "has_missing";
-session.recovery = {
-recoveredAt: Date.now(),
-endTimeBasis: "last_persisted_chunk_boundary",
-unsavedTailDurationMs: null,
-audioFinalized: false
-};
-session.fault = session.fault || "前回の記録が正常終了していません。未保存区間は不明。";
-await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
-tx.objectStore("sessions").put(session);
-tx.objectStore("sessionLogs").put({
-id: `${session.sessionId}:recovery:${Date.now()}`,
-sessionId: session.sessionId,
-kind: "lifecycle",
-timestamp: Date.now(),
-event: "recovered",
-status: "missing",
-detail: "保存済みデータのみ回復。音声コンテナの完結・再生は未保証。"
-});
-});
-recoveredCount++;
-}
-if (recoveredCount) {
-showMessage("未完了記録を回復",
-`${recoveredCount}件を保存済みチャンクの境界まで回復しました。`
-+ "未保存区間は補完していません。音声再生の可否は未確認です。");
-}
-}
-
-function ensureAudioContextFromGesture() {
-const Constructor = window.AudioContext || window.webkitAudioContext;
-if (!Constructor) throw new Error("AudioContextに対応していません。");
-if (!audioContext || audioContext.state === "closed") {
-try {
-audioContext = new Constructor({ sampleRate: REQUESTED_SAMPLE_RATE });
-} catch (_) {
-audioContext = new Constructor();
-}
-}
-// タップ直下で呼ぶ。ここより前にawaitを置かない。
-const resumed = audioContext.resume();
-return resumed || Promise.resolve();
-}
-
-function installTrackEvents(mediaStream) {
-mediaStream.getAudioTracks().forEach(track => {
-track.addEventListener("ended", () => {
-ready.microphone = false;
-updateControls();
-if (recording) emergencyStop(new Error("マイク入力が終了しました。"));
-});
-track.addEventListener("mute", () => {
-if (recording) emergencyStop(new Error("マイク入力が途絶しました。欠測として停止します。"));
-});
-});
-}
-
-async function requestMicrophone(resumePromise) {
-try {
-await resumePromise;
-if (!window.isSecureContext || !navigator.mediaDevices
-|| !navigator.mediaDevices.getUserMedia) {
-throw new Error("HTTPS上でマイク対応ブラウザから開いてください。");
-}
-disconnectMicrophoneMeter();
-if (stream) stream.getTracks().forEach(track => track.stop());
-stream = await navigator.mediaDevices.getUserMedia({
-audio: {
-channelCount: { ideal: 1 },
-sampleRate: { ideal: REQUESTED_SAMPLE_RATE },
-echoCancellation: false,
-noiseSuppression: false,
-autoGainControl: false
-},
-video: false
-});
-installTrackEvents(stream);
-connectMicrophoneMeter();
-ready.microphone = true;
-updateControls();
-const settings = stream.getAudioTracks()[0].getSettings();
-previewMessage("マイク許可済み",
-`実入力：${settings.sampleRate || "不明"} Hz／`
-+ `${settings.channelCount || "不明"}チャンネル。`
-+ "録音時は32kbpsを要求しますが、エンコード後の実値は別途検証が必要です。"
-+ "実波形とdBFSを表示します。dBFSは校正された音圧値ではありません。100ms集計は未実装です。");
-} catch (error) {
-ready.microphone = false;
-updateControls();
-disconnectMicrophoneMeter();
-if (stream) stream.getTracks().forEach(track => track.stop());
-stream = null;
-updateControls();
-showMessage("マイクを利用できません", errorText(error));
-}
-}
-
-function onMotion(event) {
-const now = performance.now();
-const previous = motionMono;
-const gap = previous === null || now - previous > 2000;
-if (finiteVector(event.acceleration)) {
-const a = event.acceleration;
-motionValueG = Math.hypot(a.x, a.y, a.z) / 9.80665;
-gravityEstimate = null;
-gravityStartedMono = null;
-motionMethod = "重力除去済み入力";
-} else if (finiteVector(event.accelerationIncludingGravity)) {
-const a = event.accelerationIncludingGravity;
-const values = [a.x, a.y, a.z];
-if (!gravityEstimate || gap) {
-gravityEstimate = values.slice();
-gravityStartedMono = now;
-}
-const dt = previous === null ? 0 : (now - previous) / 1000;
-const alpha = 1 - Math.exp(-Math.max(0, Math.min(dt, 2)) / 0.8);
-gravityEstimate = gravityEstimate.map(
-(value, i) => value + alpha * (values[i] - value));
-motionValueG = now - gravityStartedMono < 800 ? null :
-Math.hypot(...values.map(
-(value, i) => value - gravityEstimate[i])) / 9.80665;
-motionMethod = "重力推定除去";
-} else {
-return;
-}
-motionMono = now;
-lastMotionEvent = Date.now();
-if (motionWaiter) {
-const done = motionWaiter;
-motionWaiter = null;
-done();
-}
-}
-
-function waitForMotion(timeoutMs) {
-return new Promise((resolve, reject) => {
-if (lastMotionEvent && Date.now() - lastMotionEvent < 2000) {
-resolve();
-return;
-}
-const timer = setTimeout(() => {
-motionWaiter = null;
-reject(new Error("モーションの実入力を取得できません。端末設定とブラウザ対応を確認してください。"));
-}, timeoutMs);
-motionWaiter = () => {
-clearTimeout(timer);
-resolve();
-};
-});
-}
-
-async function requestMotion(permissionPromise) {
-try {
-if (!window.DeviceMotionEvent) {
-throw new Error("DeviceMotionEventに対応していません。");
-}
-const permission = await permissionPromise;
-if (permission !== "granted") throw new Error("モーション権限が許可されていません。");
-if (!motionListenerInstalled) {
-window.addEventListener("devicemotion", onMotion);
-motionListenerInstalled = true;
-}
-await waitForMotion(7000);
-motionPermissionGranted = true;
-startMeterTimer();
-ready.motion = motionInputAvailable();
-updateControls();
-previewMessage("モーション入力確認済み",
-"端末の動的加速度を表示します。重力推定時は約0.8秒待機します。身体の動きの直接測定ではありません。100ms集計は未実装です。");
-} catch (error) {
-ready.motion = false;
-updateControls();
-motionPermissionGranted = false;
-updateControls();
-showMessage("モーションを利用できません", errorText(error));
-}
-}
-
-function selectMimeType() {
-if (!window.MediaRecorder || !MediaRecorder.isTypeSupported) {
-throw new Error("MediaRecorderに対応していません。");
-}
-const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent)
-|| (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-const mp4 = ["audio/mp4", "audio/mp4;codecs=mp4a.40.2"];
-const webm = ["audio/webm;codecs=opus", "audio/webm"];
-const candidates = isIOS ? [...mp4, ...webm] : [...webm, ...mp4];
-const selectedType = candidates.find(type => MediaRecorder.isTypeSupported(type));
-if (!selectedType) {
-throw new Error("指定のMP4/AACまたはWebM形式に対応していません。");
-}
-return selectedType;
-}
-
-function elapsedNow() {
-return Math.max(0, Math.round(performance.now() - recordingStartMono));
-}
-
-async function acquireWakeLock() {
-if (!recording || document.visibilityState !== "visible"
-|| !navigator.wakeLock) return;
-try {
-if (wakeLock && !wakeLock.released) return;
-wakeLock = await navigator.wakeLock.request("screen");
-wakeLock.addEventListener("release", () => { wakeLock = null; });
-} catch (error) {
-console.warn("画面点灯維持を取得できません:", error);
-}
-}
-
-async function releaseWakeLock() {
-const lock = wakeLock;
-wakeLock = null;
-if (lock && !lock.released) {
-try { await lock.release(); } catch (_) {}
-}
-}
-
-function enqueueAudio(blob, eventOffset) {
-if (!activeSession || !blob || !blob.size) return;
-const session = activeSession;
-const seq = ++sequence;
-const previousOffset = lastChunkEventOffset;
-lastChunkEventOffset = eventOffset;
-pendingChunks++;
-if (pendingChunks > 3) {
-emergencyStop(new Error("音声の保存が録音速度に追いつきません。メモリ増大防止のため停止します。"));
-}
-
-saveChain = saveChain.then(async () => {
-let bytes = null;
-try {
-bytes = await blob.arrayBuffer();
-const id = `${session.sessionId}:${String(seq).padStart(8, "0")}`;
-const chunk = {
-id,
-sessionId: session.sessionId,
-sequence: seq,
-mimeType: recorder ? recorder.mimeType : session.audioConfig.mimeType,
-startOffsetMs: previousOffset,
-endOffsetMs: eventOffset,
-durationMs: Math.max(0, eventOffset - previousOffset),
-offsetBasis: "dataavailable_callback_monotonic_time",
-isIndependentMediaFile: null,
-byteLength: bytes.byteLength,
-data: bytes
-};
-const next = structuredClone(session);
-next.audioBytes += bytes.byteLength;
-next.audioChunkCount++;
-next.lastPersistedOffsetMs = eventOffset;
-next.lastPersistedEpochMs =
-next.recording.startEpochMs + eventOffset;
-next.heartbeatEpochMs = Date.now();
-await transaction(["audioChunks", "sessions"], "readwrite", tx => {
-tx.objectStore("audioChunks").add(chunk);
-tx.objectStore("sessions").put(next);
-});
-Object.assign(session, next);
-} catch (error) {
-recordingFault = recordingFault || errorText(error);
-emergencyStop(error);
-} finally {
-// オブジェクトURLを作らないためrevoke対象はない。
-// 逐次書込み完了後にArrayBufferとBlobを保持しない。
-bytes = null;
-pendingChunks--;
-}
-});
-}
-
-async function beginRecording(resumePromise) {
-if (recording || starting || stopping || updating || verifyBusy || !ownsRuntime) return;
-starting = true;
-updateControls();
-let sessionWritten = false;
-try {
-await resumePromise;
-if (!await claimLease()) throw new Error("別タブで使用中です。");
-if (!stream || !stream.getAudioTracks().some(t => t.readyState === "live")) {
-throw new Error("マイクを再度許可してください。");
-}
-if (!microphoneInputAvailable()) throw new Error("マイクの実入力を確認してください。");
-if (!motionInputAvailable()) throw new Error("モーションの実入力を確認してください。");
-const mimeType = selectMimeType();
-const settings = stream.getAudioTracks()[0].getSettings();
-const startEpochMs = Date.now();
-const startDate = new Date(startEpochMs);
-const sessionId = `sess_${startDate.getFullYear()}`
-+ `${pad(startDate.getMonth() + 1)}${pad(startDate.getDate())}_`
-+ `${pad(startDate.getHours())}${pad(startDate.getMinutes())}`
-+ `${pad(startDate.getSeconds())}_${sessionSuffix()}`;
-const identifier = await patientId();
-const gainAdjustedStream = buildRecordingStream();
-recorder = new MediaRecorder(gainAdjustedStream, {
-mimeType,
-audioBitsPerSecond: REQUESTED_BITRATE
-});
-activeSession = {
-formatVersion: "zip-store-v1",
-appVersion: APP_VERSION,
-implementationPhase: 2,
-sessionId,
-patientId: identifier,
-state: "recording",
-calendarSaved: false,
-owner: ownerId,
-recording: {
-startTime: isoLocal(startEpochMs),
-endTime: null,
-startEpochMs,
-endEpochMs: null,
-totalDurationMs: null
-},
-metrics: {
-baselineDbFS: null,
-soundThresholdDb: 10,
-motionThresholdG: 0.05,
-soundDetectedMs: null,
-motionDetectedMs: null,
-dataStatus: "unobtainable"
-},
-audioConfig: {
-mimeType: recorder.mimeType || mimeType,
-sampleRate: null,
-channels: null,
-bitrate: recorder.audioBitsPerSecond || null
-},
-audioDiagnostics: {
-requestedSampleRate: REQUESTED_SAMPLE_RATE,
-requestedChannels: 1,
-requestedBitrate: REQUESTED_BITRATE,
-inputSampleRate: settings.sampleRate || null,
-inputChannels: settings.channelCount || null,
-audioContextSampleRate: audioContext.sampleRate,
-encodedSampleRateVerified: false,
-encodedChannelsVerified: false,
-chunkPlaybackVerified: false,
-recordingGain: recordingGainPolicy(),
-levelLog: "100ms_observations_separate_windows"
-},
-audioFiles: [],
-audioBytes: 0,
-audioChunkCount: 0,
-lastPersistedEpochMs: startEpochMs,
-lastPersistedOffsetMs: 0,
-heartbeatEpochMs: startEpochMs,
-audioFinalized: false,
-fault: null
-};
-await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
-tx.objectStore("sessions").add(activeSession);
-tx.objectStore("sessionLogs").add({
-id: `${sessionId}:start`,
-sessionId,
-kind: "lifecycle",
-timestamp: startEpochMs,
-event: "start_requested",
-detail: "Phase 2。センシングログは未取得。"
-});
-});
-sessionWritten = true;
-recordingFault = null;
-sequence = 0;
-pendingChunks = 0;
-saveChain = Promise.resolve();
-lastChunkEventOffset = 0;
-recorderStopPromise = new Promise(resolve => {
-recorderStopResolve = resolve;
-});
-recorder.addEventListener("dataavailable", event => {
-enqueueAudio(event.data, elapsedNow());
-});
-recorder.addEventListener("error", event => {
-emergencyStop(event.error || new Error("MediaRecorderのエラー"));
-});
-recorder.addEventListener("stop", () => {
-if (recorderStopResolve) recorderStopResolve();
-if (recording && !stopping) {
-emergencyStop(new Error("録音が予期せず終了しました。"));
-}
-});
-// 全ブラウザ共通でtimesliceを渡さない。
-recordingStartMono = performance.now();
-recorder.start();
-recording = true;
-startLevelLogging();
-starting = false;
-chunkTimer = setInterval(() => {
-if (!recorder || recorder.state !== "recording" || stopping) return;
-try { recorder.requestData(); } catch (error) { emergencyStop(error); }
-}, CHUNK_INTERVAL_MS);
-heartbeatTimer = setInterval(() => {
-if (!activeSession || !recording || stopping) return;
-saveChain = saveChain.then(async () => {
-activeSession.heartbeatEpochMs = Date.now();
-try { await putSession(activeSession); }
-catch (error) { emergencyStop(error); }
-});
-}, 5000);
-updateControls();
-await acquireWakeLock();
-previewMessage("記録開始 — Phase 2",
-"実際の圧縮音声を約30秒ごとに端末内へ保存します。録音ゲイン設定は" + recordingGainPolicy().gainLinear + "倍です。停止後に保存音声を再生・出力できます。倍率の実機確認は未実施です。"
-+ "実測メーターは動作します。音・体動の検出時間集計は未実装です。"
-+ "黒画面は画面ロックではありません。手動ロック・背景移行による継続は保証しません。");
-} catch (error) {
-recording = false;
-if (recorder && recorder.state !== "inactive") {
-try { recorder.stop(); } catch (_) {}
-}
-if (sessionWritten && activeSession) {
-activeSession.state = "recovered";
-activeSession.calendarSaved = true;
-activeSession.fault = errorText(error);
-activeSession.recording.endEpochMs =
-activeSession.lastPersistedEpochMs;
-activeSession.recording.endTime =
-isoLocal(activeSession.lastPersistedEpochMs);
-activeSession.recording.totalDurationMs = 0;
-activeSession.metrics.dataStatus = "has_missing";
-try { await putSession(activeSession); } catch (_) {}
-}
-clearRecordingGraph();
-activeSession = null;
-recorder = null;
-starting = false;
-updateControls();
-showMessage("記録開始に失敗", errorText(error));
-}
-}
-
-function emergencyStop(error) {
-recordingFault = recordingFault || errorText(error);
-if (!recording || stopping) return;
-// 保存キューの内部から呼ばれても、同じキューを再帰的に待たない。
-queueMicrotask(() => {
-if (recording && !stopping) {
-stopRecording().catch(failure => {
-showMessage("停止処理に失敗", errorText(failure));
-});
-}
-});
-}
-
-async function stopRecording() {
-if (!recording || stopping) return;
-stopping = true;
-clearInterval(chunkTimer);
-clearInterval(heartbeatTimer);
-updateControls();
-const session = activeSession;
-const stopOffset = elapsedNow();
-const userStopEpochMs = session.recording.startEpochMs + stopOffset;
-try {
-if (recorder && recorder.state !== "inactive") recorder.stop();
-if (recorderStopPromise) {
-let timer;
-try {
-await Promise.race([
-recorderStopPromise,
-new Promise((_, reject) => {
-timer = setTimeout(() => reject(
-new Error("MediaRecorderの最終データ待ちが30秒を超えました。")
-), 30000);
-})
-]);
-} finally {
-clearTimeout(timer);
-}
-}
-// 最終音声と計測ログの保存確定を待つ。
-stopLevelLogging();
-await saveChain;
-session.state = recordingFault ? "recovered" : "completed";
-session.calendarSaved = Boolean(recordingFault);
-session.fault = recordingFault;
-session.audioFinalized = !recordingFault;
-const end = recordingFault
-? session.lastPersistedEpochMs : userStopEpochMs;
-session.recording.endEpochMs = end;
-session.recording.endTime = isoLocal(end);
-session.recording.totalDurationMs =
-Math.max(0, end - session.recording.startEpochMs);
-if (recordingFault) session.metrics.dataStatus = "has_missing";
-await transaction(["sessions", "sessionLogs"], "readwrite", tx => {
-tx.objectStore("sessions").put(session);
-tx.objectStore("sessionLogs").put({
-id: `${session.sessionId}:stop`,
-sessionId: session.sessionId,
-kind: "lifecycle",
-timestamp: Date.now(),
-event: recordingFault ? "stopped_with_error" : "stopped",
-detail: recordingFault || "最終音声データの保存完了"
-});
-});
-renderSummary(session);
-await refreshRecords();
-showScreen("record-screen");
-if (recordingFault) {
-showMessage("記録を保存済み範囲まで回復",
-`${recordingFault} 未保存区間は補完していません。`);
-}
-} catch (error) {
-recordingFault = recordingFault || errorText(error);
-// 完了書込みに失敗した場合、DB上のrecording状態を残して
-// 次回起動時の回復対象とする。
-showMessage("停止・保存処理に失敗",
-`${errorText(error)} 次回起動時に保存済み範囲の回復を試みます。`);
-} finally {
-recording = false;
-starting = false;
-stopping = false;
-clearInterval(chunkTimer);
-clearInterval(heartbeatTimer);
-await releaseWakeLock();
-if (stream) {
-stream.getTracks().forEach(track => track.stop());
-stream = null;
-}
-clearRecordingGraph();
-disconnectMicrophoneMeter();
-ready.microphone = false;
-activeSession = null;
-recorder = null;
-recorderStopPromise = null;
-recorderStopResolve = null;
-updateControls();
-}
-}
-
-function fullLabel(key) {
-const [year, monthNumber, day] = key.split("-").map(Number);
-return `${year}年${monthNumber}月${day}日`;
-}
-
-function periodLabel(first, last) {
-return first === last
-? fullLabel(first)
-: `${fullLabel(first)}〜${fullLabel(last)}`;
-}
-
-function bounds() {
-return mode === "single"
-? [selected, selected]
-: [rangeStart, rangeEnd];
-}
-
-function visibleRecords() {
-const [first, last] = bounds();
-if (!first || !last) return [];
-return records
-.filter(session => {
-const key = sessionDate(session);
-return key >= first && key <= last;
-})
-.sort((a, b) =>
-a.recording.startEpochMs - b.recording.startEpochMs);
-}
-
-async function refreshRecords() {
-if (!db) return;
-const all = await getSessions();
-records = all.filter(session =>
-(session.state === "completed" || session.state === "recovered")
-&& session.calendarSaved
-&& session.recording
-&& Number.isFinite(session.recording.startEpochMs));
-render();
-
-if (!currentSession) {
-const latest = all
-.filter(session =>
-(session.state === "completed" || session.state === "recovered")
-&& session.recording
-&& Number.isFinite(session.recording.startEpochMs))
-.sort((a, b) =>
-b.recording.startEpochMs - a.recording.startEpochMs)[0];
-renderSummary(latest || null);
-}
-}
-
-function chooseDate(key) {
-if (mode === "single") {
-selected = key;
-} else if (!rangeStart || rangeEnd) {
-rangeStart = key;
-rangeEnd = null;
-} else {
-rangeEnd = key;
-if (rangeEnd < rangeStart) {
-[rangeStart, rangeEnd] = [rangeEnd, rangeStart];
-}
-}
-render();
-const button = Array.from(el("days").children)
-.find(node => node.dataset && node.dataset.date === key);
-if (button) button.focus();
-}
-
-function renderCalendar() {
-const year = month.getFullYear();
-const monthIndex = month.getMonth();
-el("month-title").textContent = `${year}年${monthIndex + 1}月`;
-el("single-mode").classList.toggle("active", mode === "single");
-el("range-mode").classList.toggle("active", mode === "range");
-el("single-mode").setAttribute(
-"aria-pressed", String(mode === "single"));
-el("range-mode").setAttribute(
-"aria-pressed", String(mode === "range"));
-el("selection-hint").textContent = mode === "single"
-? "確認したい日付を選んでください。"
-: !rangeStart
-? "① 開始日を選んでください。"
-: !rangeEnd
-? "② 終了日を選んでください。"
-: "期間を選択しました。別の日付を押すと選び直せます。";
-el("range-tools").hidden = mode !== "range";
-el("range-label").textContent = !rangeStart
-? "期間未選択"
-: !rangeEnd
-? `開始日：${fullLabel(rangeStart)}`
-: periodLabel(rangeStart, rangeEnd);
-
-const grid = el("days");
-grid.replaceChildren();
-const firstWeekday = new Date(year, monthIndex, 1).getDay();
-for (let i = 0; i < firstWeekday; i++) {
-const blank = document.createElement("span");
-blank.setAttribute("aria-hidden", "true");
-grid.append(blank);
-}
-const count = new Date(year, monthIndex + 1, 0).getDate();
-for (let day = 1; day <= count; day++) {
-const key = dateKey(year, monthIndex, day);
-const weekday = new Date(year, monthIndex, day).getDay();
-const hasData = records.some(session => sessionDate(session) === key);
-const edge = mode === "single"
-? key === selected
-: key === rangeStart || key === rangeEnd;
-const inside = Boolean(mode === "range" && rangeStart && rangeEnd
-&& key >= rangeStart && key <= rangeEnd);
-const button = document.createElement("button");
-button.type = "button";
-button.className = "day"
-+ (weekday === 0 ? " sun" : weekday === 6 ? " sat" : "")
-+ (key === todayKey() ? " today" : "")
-+ (inside ? " in-range" : "")
-+ (edge ? " selected" : "");
-button.dataset.date = key;
-button.setAttribute("aria-pressed", String(edge || inside));
-button.setAttribute("aria-label",
-`${fullLabel(key)}、保存記録${hasData ? "あり" : "なし"}`
-+ (key === todayKey() ? "、今日" : ""));
-const number = document.createElement("span");
-number.textContent = String(day);
-const dot = document.createElement("span");
-dot.className = "dot" + (hasData ? "" : " empty");
-dot.setAttribute("aria-hidden", "true");
-button.append(number, dot);
-button.addEventListener("click", () => chooseDate(key));
-grid.append(button);
-}
-}
-
-function renderRecords() {
-const [first, last] = bounds();
-const matched = visibleRecords();
-const complete = Boolean(first && last);
-const list = el("record-list");
-list.replaceChildren();
-el("selected-heading").textContent = complete
-? `${periodLabel(first, last)}の記録（${matched.length}件）`
-: "表示する期間を選択してください";
-el("share-button").disabled = !complete || !matched.length;
-
-if (!complete || !matched.length) {
-const empty = document.createElement("div");
-empty.className = "empty-state";
-empty.textContent = complete
-? "保存記録はありません。"
-: "カレンダーで開始日と終了日を選んでください。";
-list.append(empty);
-return;
-}
-
-matched.forEach(session => {
-const card = document.createElement("article");
-card.className = "card";
-card.dataset.recordId = session.sessionId;
-
-const saved = document.createElement("span");
-saved.className = "saved";
-saved.dataset.role = "saved-status";
-saved.textContent = session.state === "recovered"
-? "✓ 保存済み／中断回復データ"
-: "✓ カレンダーに保存済み";
-
-const time = document.createElement("p");
-time.className = "card-time";
-time.dataset.role = "record-range";
-time.textContent = rangeText(session);
-
-const duration = document.createElement("div");
-duration.className = "duration";
-const label = document.createElement("span");
-label.className = "label";
-label.textContent = "記録時間";
-const value = document.createElement("span");
-value.className = "value";
-value.dataset.role = "record-duration";
-setDuration(value, session.recording.totalDurationMs);
-duration.append(label, value);
-
-const figure = document.createElement("figure");
-figure.className = "timeline";
-const header = document.createElement("div");
-header.className = "timeline-header";
-const caption = document.createElement("figcaption");
-caption.className = "timeline-title";
-caption.textContent = "記録タイムライン";
-const phase = document.createElement("span");
-phase.className = "sample";
-phase.textContent = "Phase 3未実装";
-header.append(caption, phase);
-
-const chart = document.createElement("div");
-chart.className = "chart";
-chart.dataset.role = "timeline-chart";
-chart.textContent =
-"実測波形・音／体動の検出時間は未取得。サンプル値は表示しません。";
-
-const endpoints = document.createElement("div");
-endpoints.className = "endpoints";
-for (const [title, timestamp] of [
-["記録開始", session.recording.startEpochMs],
-["記録停止", session.recording.endEpochMs]
-]) {
-const item = document.createElement("div");
-item.append(document.createTextNode(title));
-const strong = document.createElement("strong");
-strong.textContent = datetime(timestamp);
-item.append(strong);
-endpoints.append(item);
-}
-figure.append(header, chart, endpoints);
-
-const note = document.createElement("p");
-note.className = "note";
-note.textContent =
-`音声：${session.audioChunkCount}チャンク／`
-+ `${(session.audioBytes / 1048576).toFixed(2)} MiB。`
-+ "チャンクの単独再生・エクスポート互換性は未検証。";
-card.append(saved, time, duration, figure, note);
-list.append(card);
-});
-}
-
-function render() {
-renderCalendar();
-renderRecords();
-}
-
-function openCalendar(from) {
-calendarReturnScreen = from;
-el("calendar-back").textContent = from === "capture-screen"
-? "記録画面に戻る" : "記録終了画面に戻る";
-render();
-showScreen("calendar-screen");
-}
-
-function openShare() {
-const [first, last] = bounds();
-const matched = visibleRecords();
-if (!first || !last || !matched.length) return;
-el("zip-period").textContent = periodLabel(first, last);
-el("zip-count").textContent = `対象：${matched.length}件の睡眠記録`;
-el("zip-name").textContent =
-`SomnoLog_${first}${first === last ? "" : `_${last}`}.zip`;
-el("share-status").textContent =
-"ZIP生成はPhase 4で実装します。今回はファイルを生成しません。";
-el("share-dialog").showModal();
-}
-
-function updateClock() {
-const d = new Date();
-const text = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
-el("black-clock").textContent = text;
-el("black-clock").dateTime = text;
-}
-
-function setClockState(state) {
-el("black-screen").dataset.clockState = state;
-el("black-back").disabled = state === "off";
-el("black-screen").setAttribute("aria-label", state === "off"
-? "黒画面。タップまたはEnterで時計と戻るボタンを表示"
-: "時計表示。タップで明るく表示。戻るボタンで記録画面に復帰");
-if (state === "off" && document.activeElement === el("black-back")) {
-el("black-screen").focus();
-}
-}
-
-function wakeClock() {
-updateClock();
-setClockState("bright");
-clearTimeout(clockHideTimer);
-clockHideTimer = setTimeout(() => setClockState("off"), 3000);
-}
-
-function leaveBlackScreen() {
-clearTimeout(clockHideTimer);
-el("black-screen").hidden = true;
-document.body.style.overflow = "";
-el("black-button").focus();
-}
-
-function cacheBusted(url) {
-const target = new URL(url, location.href);
-target.searchParams.set("_somnolog_cb",
-`${Date.now()}-${sessionSuffix()}`);
-return target.href;
-}
-
-async function fetchFresh(url, json = false) {
-const controller = new AbortController();
-const timer = setTimeout(() => controller.abort(), 20000);
-try {
-const response = await fetch(cacheBusted(url), {
-cache: "no-store",
-credentials: "omit",
-redirect: "follow",
-signal: controller.signal,
-headers: {
-Accept: json ? "application/vnd.github+json" : "text/html"
-}
-});
-if (!response.ok) {
-throw new Error(`更新取得失敗：HTTP ${response.status}`);
-}
-return json ? await response.json() : await response.text();
-} finally {
-clearTimeout(timer);
-}
-}
-
-async function disposeForUpdate() {
-if (recording || starting || stopping || pendingChunks || verifyBusy) {
-throw new Error("録音・保存処理中は更新できません。");
-}
-disposed = true;
-clearVerifyFiles();
-clearRecordingGraph();
-stopMeterTimer();
-disconnectMicrophoneMeter();
-clearInterval(leaseTimer);
-clearInterval(clockTimer);
-clearInterval(chunkTimer);
-clearInterval(heartbeatTimer);
-clearTimeout(retryTimer);
-clearTimeout(clockHideTimer);
-if (motionListenerInstalled) {
-window.removeEventListener("devicemotion", onMotion);
-}
-if (stream) {
-stream.getTracks().forEach(track => track.stop());
-stream = null;
-}
-await releaseWakeLock();
-if (audioContext && audioContext.state !== "closed") {
-try { await audioContext.close(); } catch (_) {}
-}
-try { await releaseLease(); } catch (_) {}
-ownsRuntime = false;
-if (releasingRuntime) {
-releasingRuntime();
-releasingRuntime = null;
-}
-if (db) {
-db.close();
-db = null;
-}
-}
-
-async function applyLatestGitHub() {
-if (recording || starting || stopping || pendingChunks || updating || verifyBusy) {
-showMessage("更新できません",
-"録音または保存処理が終わってから更新してください。");
-return;
-}
-updating = true;
-updateControls();
-try {
-if (location.protocol !== "https:") {
-throw new Error("動的更新はHTTPS上で実行してください。");
-}
-// 配置先リポジトリのデフォルトブランチを取得する。
-const repository = await fetchFresh(
-`https://api.github.com/repos/${REPOSITORY}`, true);
-const branch = repository.default_branch || REPOSITORY_BRANCH;
-const commit = await fetchFresh(
-`https://api.github.com/repos/${REPOSITORY}/commits/`
-+ encodeURIComponent(branch), true);
-const sha = commit.sha;
-if (typeof sha !== "string" || !/^[a-f0-9]{40}$/i.test(sha)) {
-throw new Error("GitHubのコミットSHAを確認できません。");
-}
-const latestHtml = await fetchFresh(
-`https://raw.githubusercontent.com/${REPOSITORY}/${sha}/`
-+ REPOSITORY_FILE);
-
-const parsed = new DOMParser()
-.parseFromString(latestHtml, "text/html");
-const scripts = Array.from(parsed.querySelectorAll("script"));
-if (scripts.length !== 1 || scripts[0].src
-|| !scripts[0].textContent.includes(BUILD_MARKER)) {
-throw new Error(
-"更新先は今回の正本実装と互換性がありません。旧版または別構成のため適用しません。");
-}
-if (frozenShell(parsed) !== expectedShell) {
-throw new Error(
-"更新先のHTML・CSSが正本と異なります。UIフリーズを守るため適用しません。");
-}
-if (parsed.querySelector(
-"iframe,object,embed,link[rel='stylesheet'],meta[http-equiv='refresh']")) {
-throw new Error("更新HTMLに未許可の外部依存があります。");
-}
-
-const versionMatch = scripts[0].textContent.match(
-/\bconst\s+APP_VERSION\s*=\s*["']([^"']+)["']/);
-const targetVersion = versionMatch ? versionMatch[1] : "不明";
-const unchanged =
-scripts[0].textContent === document.querySelector("script").textContent;
-if (unchanged) {
-showMessage("最新版を確認",
-`${APP_VERSION} は最新コミット ${sha.slice(0, 12)} と同じコードです。`);
-return;
-}
-if (!window.confirm(
-`GitHub最新コミット ${sha.slice(0, 12)} の`
-+ ` ${targetVersion} を適用しますか？\n`
-+ "記録データはIndexedDBに残します。")) {
-return;
-}
-const restoredUrl = new URL(location.href);
-restoredUrl.searchParams.set("_somnolog_commit", sha);
-restoredUrl.searchParams.set("_somnolog_cb", String(Date.now()));
-history.replaceState(null, "", restoredUrl.href);
-await disposeForUpdate();
-// 同じHTTPSオリジンの文書を差し替えるため、IndexedDBの所在は変えない。
-// ここで実行するのは利用者が指定した公開リポジトリのコードのみ。
-document.open();
-document.write(latestHtml);
-document.close();
-} catch (error) {
-if (disposed) {
-window.alert(`${errorText(error)} ページを再読み込みしてください。`);
-} else {
-showMessage("更新を適用できません",
-`${errorText(error)} 現在のコードを維持しました。`);
-}
-} finally {
-updating = false;
-if (!disposed) updateControls();
-}
-}
-
-async function reloadWithoutCache() {
-if (recording || starting || stopping || pendingChunks || updating || verifyBusy) {
-showMessage("再読み込みできません",
-"録音・保存処理が終わってから操作してください。");
-return;
-}
-updating = true;
-updateControls();
-try {
-await disposeForUpdate();
-location.replace(cacheBusted(location.href));
-} catch (error) {
-window.alert(errorText(error));
-}
-}
-
-// 更新操作は常設ボタンへ移行。
-
-el("microphone-permission").addEventListener("click", () => {
-if (!ownsRuntime || recording || starting || updating) return;
-let resumed;
-try {
-resumed = ensureAudioContextFromGesture();
-} catch (error) {
-showMessage("AudioContextを起動できません", errorText(error));
-return;
-}
-void requestMicrophone(resumed);
-});
-
-el("motion-permission").addEventListener("click", () => {
-if (!ownsRuntime || recording || starting || updating) return;
-let permission;
-try {
-const eventType = window.DeviceMotionEvent;
-permission = eventType && typeof eventType.requestPermission === "function"
-? eventType.requestPermission()
-: Promise.resolve(eventType ? "granted" : "unavailable");
-} catch (error) {
-showMessage("モーション権限を取得できません", errorText(error));
-return;
-}
-void requestMotion(permission);
-});
-
-el("start").addEventListener("click", () => {
-let resumed;
-try {
-resumed = ensureAudioContextFromGesture();
-} catch (error) {
-showMessage("記録を開始できません", errorText(error));
-return;
-}
-void beginRecording(resumed);
-});
-
-el("stop-button").addEventListener("click", () => {
-void stopRecording();
-});
-el("history-button").addEventListener("click", () => {
-if (!recording && !starting && !stopping) {
-openCalendar("capture-screen");
-}
-});
-el("capture-help-button").addEventListener("click", () => {
-el("usage-dialog").showModal();
-});
-el("black-button").addEventListener("click", () => {
-if (!recording || stopping) return;
-updateClock();
-el("black-screen").hidden = false;
-document.body.style.overflow = "hidden";
-setClockState("dim");
-clearTimeout(clockHideTimer);
-el("black-screen").focus();
-});
-el("black-screen").addEventListener("click", event => {
-if (event.target.closest("#black-back")) return;
-wakeClock();
-});
-el("black-screen").addEventListener("keydown", event => {
-if (event.target !== el("black-screen")) return;
-if (event.key === "Enter" || event.key === " ") {
-event.preventDefault();
-wakeClock();
-}
-if (event.key === "Escape") {
-event.preventDefault();
-leaveBlackScreen();
-}
-});
-el("black-back").addEventListener("click", event => {
-event.stopPropagation();
-leaveBlackScreen();
-});
-clockTimer = setInterval(() => {
-if (!el("black-screen").hidden) updateClock();
-}, 1000);
-
-el("record-back").addEventListener("click", () =>
-showScreen("capture-screen"));
-el("calendar-button").addEventListener("click", () =>
-openCalendar("record-screen"));
-el("calendar-back").addEventListener("click", () =>
-showScreen(calendarReturnScreen));
-el("save-button").addEventListener("click", () => {
-if (!currentSession) return;
-el("save-dialog").showModal();
-});
-el("save-calendar").addEventListener("click", async () => {
-if (!currentSession || !db) return;
-el("save-calendar").disabled = true;
-try {
-const stored = await getRecord("sessions", currentSession.sessionId);
-if (!stored) throw new Error("対象セッションが見つかりません。");
-stored.calendarSaved = true;
-await putSession(stored);
-renderSummary(stored);
-selected = sessionDate(stored);
-const date = new Date(stored.recording.startEpochMs);
-month = new Date(date.getFullYear(), date.getMonth(), 1);
-mode = "single";
-await refreshRecords();
-openCalendar("record-screen");
-showMessage("カレンダーに保存",
-"セッションと録音チャンクを端末内のIndexedDBへ保存しました。"
-+ "ブラウザデータの削除やストレージの退避・消去で失われる可能性があります。");
-} catch (error) {
-showMessage("カレンダー登録に失敗", errorText(error));
-} finally {
-el("save-calendar").disabled = false;
-}
-});
-el("share-current").addEventListener("click", () => {
-showScreen("record-screen");
-void loadSavedAudio();
-});
-el("single-mode").addEventListener("click", () => {
-mode = "single";
-render();
-});
-el("range-mode").addEventListener("click", () => {
-mode = "range";
-render();
-});
-el("reset-range").addEventListener("click", () => {
-rangeStart = null;
-rangeEnd = null;
-render();
-});
-el("prev-month").addEventListener("click", () => {
-month = new Date(month.getFullYear(), month.getMonth() - 1, 1);
-renderCalendar();
-});
-el("next-month").addEventListener("click", () => {
-month = new Date(month.getFullYear(), month.getMonth() + 1, 1);
-renderCalendar();
-});
-el("share-button").addEventListener("click", openShare);
-el("zip-save").addEventListener("click", () => {
-el("share-status").textContent =
-"Phase 4未実装。ZIPファイルは作成していません。";
-});
-el("clinic-button").addEventListener("click", () => {
-el("share-status").textContent =
-"窓口連携は未実装です。患者IDや状態は変更していません。";
-});
-document.querySelectorAll("[data-help]").forEach(button => {
-button.addEventListener("click", () => {
-showMessage("記録・履歴の使い方",
-"開始時にマイクとモーションを許可し、記録開始を押します。"
-+ "停止後、保存・共有からカレンダーに登録できます。"
-+ "Phase 2では音声保存と中断回復を検証します。"
-+ "実測メーターを利用できます。検出時間・保存波形はPhase 3、ZIPはPhase 4です。"
-+ "更新は開始画面の「更新を確認・適用」を押してください。");
-});
-});
-
-function onVisibilityChange() {
-if (document.visibilityState === "visible") {
-if (recording) void acquireWakeLock();
-if (!ownsRuntime && !disposed && db) {
-acquireRuntime().catch(error =>
-showMessage("使用権の取得失敗", errorText(error)));
-}
-} else if (recording && recorder && recorder.state === "recording") {
-try { recorder.requestData(); }
-catch (error) { emergencyStop(error); }
-}
-}
-document.addEventListener("visibilitychange", onVisibilityChange);
-
-window.addEventListener("beforeunload", event => {
-if (recording || starting || stopping || pendingChunks) {
-event.preventDefault();
-event.returnValue = "";
-}
-});
-window.addEventListener("pagehide", () => {
-stopMeterTimer();
-// ページ終了時の非同期保存は保証しない。
-// 正常終了の印を付けず、次回起動時に保存済み範囲を回復する。
-clearInterval(leaseTimer);
-clearTimeout(retryTimer);
-if (recording && recorder && recorder.state === "recording") {
-try { recorder.requestData(); } catch (_) {}
-}
-});
-window.addEventListener("pageshow", event => {
-if (!disposed) startMeterTimer();
-if (!event.persisted || disposed) return;
-if (ownsRuntime) {
-clearInterval(leaseTimer);
-leaseTimer = setInterval(renewLease, 3000);
-void renewLease();
-} else if (db) {
-acquireRuntime().catch(error =>
-showMessage("復帰時の初期化失敗", errorText(error)));
-}
-});
-
-async function initialize() {
-// 正本内の固定サンプル文言は、既存DOMの内容だけ更新する。
-const calendarNote = el("calendar-screen")
-.querySelector("section[aria-labelledby='selected-heading'] > p.note");
-if (calendarNote) {
-calendarNote.textContent =
-"※端末内に保存した実記録を表示します。波形はPhase 3未実装。"
-+ "記録開始時刻は実際の入眠時刻を示すものではありません。";
-}
-el("share-dialog").querySelector("p.note").textContent =
-"※この版ではZIP作成・保存・送信を行いません。Phase 4で実装します。";
-el("share-dialog").querySelector("ul").replaceChildren();
-for (const text of [
-"manifest.json：記録条件とファイル参照",
-"log.json：時系列ログ（Phase 3で取得）",
-"README.txt：記録条件の概要",
-"audio/：録音データ",
-"複数記録はsessions/配下に分割（Phase 4で実装）"
-]) {
-const item = document.createElement("li");
-item.textContent = text;
-el("share-dialog").querySelector("ul").append(item);
-}
-renderSummary(null);
-render();
-updateControls();
-
-try {
-if (!window.isSecureContext) {
-throw new Error("HTTPSで配信してSafariまたはChromeから開いてください。");
-}
-if (!window.indexedDB) {
-throw new Error("IndexedDBが利用できません。");
-}
-db = await openDatabase();
-await acquireRuntime();
-await refreshRecords();
-updateControls();
-if (!ownsRuntime) {
-showMessage("別タブで使用中",
-"他のSomnoLogタブを閉じてください。使用権取得後に記録操作が有効になります。");
-}
-console.info("SomnoLog initialized", {
-appVersion: APP_VERSION,
-buildMarker: BUILD_MARKER,
-phase: 2,
-ownsRuntime
-});
-} catch (error) {
-updateControls();
-showMessage("初期化できません", errorText(error));
-}
-}
-
-
-  // SOMNOLOG_AUDIO_VERIFY_V06
-  let verifyBusy = false;
-  let verifyGraph = null;
-  let verifyTimer = null;
-  let verifyRows = [];
-  let verifyBatch = 0;
-  let verifyPreviousMono = null;
-  let verifyAudioURL = null;
-  let verifyCSVURL = null;
-  let verifyFile = null;
-  let verifySelectedId = null;
-  let verifyDecodeContext = null;
-  let verifyPanel = null;
-  const VERIFY_EXPORT_LIMIT = 128 * 1048576;
-  const VERIFY_DECODE_LIMIT = 16 * 1048576;
-
-  function recordingGainPolicy() {
-    const ios = /iPad|iPhone|iPod/.test(navigator.userAgent || "") ||
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    const android = /Android/i.test(navigator.userAgent || "");
-    return { deviceClass: ios ? "ios" : android ? "android" : "other",
-      gainLinear: ios ? 9 : android ? 2 / 3 : 1 };
+  "use strict";
+  const $ = id => document.getElementById(id);
+  let url = null;
+  const logging = String.raw`
+let v07PreviousOffset = 0;
+
+function captureLevelObservation() {
+  if (!recording || stopping || !activeSession) return;
+  const offset = elapsedNow();
+  const gap = Math.max(0, offset - v07PreviousOffset);
+  const represented = Math.min(150, gap);
+  const row = {
+    timestamp: Date.now(), offsetMs: offset, gapMs: gap,
+    intervalStartMs: Math.max(v07PreviousOffset, offset - represented),
+    intervalEndMs: offset,
+    representedMs: represented,
+    gainLinear: recordingGainPolicy().gainLinear,
+    status: "missing",
+    audioStatus: "missing", motionStatus: "missing",
+    inputRms: null, inputPeak: null, inputDbFS: null,
+    outputRms: null, outputPeak: null, outputDbFS: null,
+    outputOverFullScaleFraction: null, motionG: null,
+    soundDetected: null, motionDetected: null
+  };
+  v07PreviousOffset = offset;
+  if (motionInputAvailable()) {
+    row.motionG = motionValueG;
+    row.motionStatus = "observed";
+    row.motionDetected = motionValueG >= 0.05;
   }
-
-  function clearRecordingGraph() {
-    clearInterval(verifyTimer);
-    verifyTimer = null;
-    if (verifyGraph) {
-      for (const node of [verifyGraph.source, verifyGraph.gain,
-        verifyGraph.analyser, verifyGraph.destination]) {
-        try { node.disconnect(); } catch (_) {}
-      }
-      verifyGraph.destination.stream.getTracks().forEach(t => t.stop());
+  try {
+    if (microphoneInputAvailable() && verifyGraph) {
+      const before = levelStats(meterAnalyser, meterSamples);
+      const after = levelStats(verifyGraph.analyser, verifyGraph.samples);
+      Object.assign(row, {
+        audioStatus: "observed",
+        inputRms: before.rms, inputPeak: before.peak,
+        inputDbFS: before.dbfs,
+        outputRms: after.rms, outputPeak: after.peak,
+        outputDbFS: after.dbfs,
+        outputOverFullScaleFraction: after.over
+      });
     }
-    verifyGraph = null;
-  }
+  } catch (_) { row.audioStatus = "analysis_error"; }
+  row.status = gap > 250 ? "gap" :
+    row.audioStatus === "observed" && row.motionStatus === "observed"
+    ? "observed" : "partial_or_missing";
+  verifyRows.push(row);
+  if (verifyRows.length >= 10) flushLevelRows();
+}
 
-  function buildRecordingStream() {
-    clearRecordingGraph();
-    const source = audioContext.createMediaStreamSource(stream);
-    const gain = audioContext.createGain();
-    const analyser = audioContext.createAnalyser();
-    const destination = audioContext.createMediaStreamDestination();
-    analyser.fftSize = 2048;
-    analyser.smoothingTimeConstant = 0;
-    gain.gain.setValueAtTime(recordingGainPolicy().gainLinear, audioContext.currentTime);
-    // 可能な場合は録音出力をモノラルにする。エンコード後のch数は別途確認する。
-    try {
-      destination.channelCount = 1;
-      destination.channelCountMode = "explicit";
-    } catch (_) {}
-    source.connect(gain);
-    gain.connect(analyser);
-    analyser.connect(destination);
-    verifyGraph = { source, gain, analyser, destination,
-      samples: new Float32Array(analyser.fftSize) };
-    // 録音専用。スピーカーには接続しない。
-    return destination.stream;
-  }
+function startLevelLogging() {
+  clearInterval(verifyTimer);
+  verifyRows = [];
+  verifyBatch = 0;
+  verifyPreviousMono = null;
+  v07PreviousOffset = 0;
+  captureLevelObservation();
+  verifyTimer = setInterval(captureLevelObservation, 100);
+}
 
-  function levelStats(analyser, samples) {
-    analyser.getFloatTimeDomainData(samples);
-    let sum = 0, peak = 0, over = 0;
-    for (const x of samples) {
-      if (!Number.isFinite(x)) throw new Error("音声解析値が不正です。");
-      sum += x * x;
-      peak = Math.max(peak, Math.abs(x));
-      if (Math.abs(x) >= 1) over++;
+function stopLevelLogging() {
+  if (verifyTimer !== null) captureLevelObservation();
+  clearInterval(verifyTimer);
+  verifyTimer = null;
+  flushLevelRows();
+}
+  `;
+
+  const aggregation = String.raw`
+function levelRowsFromBatches(batches) {
+  return batches.filter(b =>
+    b.kind === "audio_levels_v06" || b.kind === "audio_levels_v07")
+    .flatMap(b => Array.isArray(b.rows) ? b.rows : [])
+    .sort((a, b) => a.offsetMs - b.offsetMs);
+}
+
+function aggregateObservedLevels(rows, durationMs) {
+  const audioValid = r => r.audioStatus === "observed" ||
+    (r.audioStatus === undefined && Number.isFinite(r.inputRms));
+  const motionValid = r => r.motionStatus === "observed" ||
+    (r.motionStatus === undefined && Number.isFinite(r.motionG));
+  // デジタル無音はdBFSが有限ではないため基準値の候補にしない。
+  const calibration = rows.filter(r => r.offsetMs <= 2000 &&
+    audioValid(r) && Number.isFinite(r.inputDbFS))
+    .map(r => r.inputDbFS).sort((a, b) => a - b);
+  let baseline = null;
+  if (calibration.length) {
+    const middle = Math.floor(calibration.length / 2);
+    baseline = calibration.length % 2 ? calibration[middle] :
+      (calibration[middle - 1] + calibration[middle]) / 2;
+  }
+  let previous = 0, audioObserved = 0, motionObserved = 0;
+  let soundClassified = 0, soundDetected = 0, motionDetected = 0;
+  for (const r of rows) {
+    const end = Math.min(durationMs, Math.max(0, r.offsetMs));
+    const start = Number.isFinite(r.intervalStartMs) ?
+      Math.max(previous, r.intervalStartMs) :
+      Math.max(previous, end - 150);
+    const width = Math.max(0, Math.min(150, end - start));
+    previous = Math.max(previous, end);
+    if (audioValid(r)) {
+      audioObserved += width;
+      if (baseline !== null) {
+        soundClassified += width;
+        r.soundDetected = r.inputRms === 0 ? false :
+          Number.isFinite(r.inputDbFS) ? r.inputDbFS >= baseline + 10 : null;
+        if (r.soundDetected === true) soundDetected += width;
+      } else r.soundDetected = null;
     }
-    const rms = Math.sqrt(sum / samples.length);
-    return { rms, peak, dbfs: rms > 0 ? 20 * Math.log10(rms) : null,
-      over: over / samples.length };
-  }
-
-  function flushLevelRows() {
-    if (!activeSession || !verifyRows.length) return;
-    const sessionId = activeSession.sessionId;
-    const rows = verifyRows;
-    verifyRows = [];
-    const number = ++verifyBatch;
-    saveChain = saveChain.then(async () => {
-      try {
-        await transaction(["profileBins"], "readwrite", tx => {
-          tx.objectStore("profileBins").add({
-            id: sessionId + ":levels:" + String(number).padStart(8, "0"),
-            sessionId, kind: "audio_levels_v06",
-            nominalIntervalMs: 100,
-            measurementBasis: "separate_analyser_windows",
-            rows
-          });
-        });
-      } catch (error) {
-        recordingFault = recordingFault || "計測ログ保存失敗：" + errorText(error);
-        emergencyStop(error);
-      }
-    });
-  }
-
-  function startLevelLogging() {
-    verifyRows = [];
-    verifyBatch = 0;
-    verifyPreviousMono = null;
-    verifyTimer = setInterval(() => {
-      if (!recording || stopping || !activeSession) return;
-      const mono = performance.now();
-      const gap = verifyPreviousMono === null ? null : mono - verifyPreviousMono;
-      verifyPreviousMono = mono;
-      const row = {
-        timestamp: Date.now(), offsetMs: elapsedNow(), gapMs: gap,
-        gainLinear: recordingGainPolicy().gainLinear, status: "missing",
-        inputRms: null, inputPeak: null, inputDbFS: null,
-        outputRms: null, outputPeak: null, outputDbFS: null,
-        outputOverFullScaleFraction: null,
-        motionG: motionInputAvailable() ? motionValueG : null
-      };
-      try {
-        if (microphoneInputAvailable() && verifyGraph) {
-          const before = levelStats(meterAnalyser, meterSamples);
-          const after = levelStats(verifyGraph.analyser, verifyGraph.samples);
-          Object.assign(row, {
-            status: gap !== null && gap > 250 ? "gap" : "observed",
-            inputRms: before.rms, inputPeak: before.peak, inputDbFS: before.dbfs,
-            outputRms: after.rms, outputPeak: after.peak, outputDbFS: after.dbfs,
-            outputOverFullScaleFraction: after.over
-          });
-        }
-      } catch (_) { row.status = "analysis_error"; }
-      verifyRows.push(row);
-      if (verifyRows.length >= 100) flushLevelRows();
-    }, 100);
-  }
-
-  function stopLevelLogging() {
-    clearInterval(verifyTimer);
-    verifyTimer = null;
-    flushLevelRows();
-  }
-
-  function clearVerifyFiles() {
-    if (verifyPanel) {
-      const audio = verifyPanel.querySelector("audio");
-      if (audio) {
-        audio.pause();
-        audio.removeAttribute("src");
-        audio.load();
-      }
+    if (motionValid(r)) {
+      motionObserved += width;
+      r.motionDetected = r.motionG >= 0.05;
+      if (r.motionDetected) motionDetected += width;
     }
-    if (verifyAudioURL) URL.revokeObjectURL(verifyAudioURL);
+  }
+  const missingAudio = Math.max(0, durationMs - audioObserved);
+  const missingMotion = Math.max(0, durationMs - motionObserved);
+  return {
+    baselineDbFS: baseline, soundThresholdDb: 10, motionThresholdG: 0.05,
+    soundDetectedMs: soundClassified > 0 ? soundDetected : null,
+    motionDetectedMs: motionObserved > 0 ? motionDetected : null,
+    audioObservedMs: audioObserved, motionObservedMs: motionObserved,
+    soundClassifiedMs: soundClassified,
+    audioMissingMs: missingAudio, motionMissingMs: missingMotion,
+    observationCount: rows.length,
+    dataStatus: !audioObserved && !motionObserved ? "unobtainable" :
+      missingAudio > 0 || missingMotion > 0 || baseline === null
+      ? "has_missing" : "observed",
+    aggregationMethod: "sampled_intervals_capped_150ms",
+    baselineMethod: "median_finite_input_dbfs_first_2000ms",
+    detectionMeaning: "approximate_observed_duration_not_continuous_detection"
+  };
+}
+
+async function finalizeObservedMetrics(session, durationMs) {
+  const batches = await sessionItems("profileBins", session.sessionId);
+  const rows = levelRowsFromBatches(batches);
+  session.metrics = Object.assign({}, session.metrics,
+    aggregateObservedLevels(rows, durationMs));
+  session.implementationPhase = 3;
+}
+
+function v07CoverageText(session) {
+  const m = session.metrics || {};
+  const seconds = v => Number.isFinite(v) ? (v / 1000).toFixed(2) + "秒" : "未集計";
+  return "観測 " + (m.observationCount ?? "未集計") +
+    "件／音入力取得 " + seconds(m.audioObservedMs) +
+    "／体動入力取得 " + seconds(m.motionObservedMs) +
+    "／音欠測 " + seconds(m.audioMissingMs) +
+    "／体動欠測 " + seconds(m.motionMissingMs) +
+    "。検出時間は観測区間の概算です。" +
+    (Number.isFinite(m.baselineDbFS)
+      ? " 音基準 " + m.baselineDbFS.toFixed(1) + " dBFS＋10 dB。"
+      : " 音基準未取得のため音の検出時間は算出できません。");
+}
+
+async function makeLevelsCSV() {
+  if (verifyBlocked() || !currentSession) return;
+  const session = currentSession;
+  verifyBusy = true;
+  updateControls();
+  try {
+    const batches = await sessionItems("profileBins", session.sessionId);
+    const rows = levelRowsFromBatches(batches);
+    if (!rows.length) throw new Error("保存済み観測ログがありません。");
+    const duration = session.recording.totalDurationMs || 0;
+    aggregateObservedLevels(rows, duration);
+    const keys = ["timestamp", "offsetMs", "gapMs", "intervalStartMs",
+      "intervalEndMs", "representedMs", "gainLinear", "status",
+      "audioStatus", "motionStatus", "inputRms", "inputPeak", "inputDbFS",
+      "outputRms", "outputPeak", "outputDbFS",
+      "outputOverFullScaleFraction", "motionG",
+      "soundDetected", "motionDetected"];
+    const csv = "\ufeff" + keys.join(",") + "\r\n" +
+      rows.map(r => keys.map(k => r[k] ?? "").join(",")).join("\r\n");
     if (verifyCSVURL) URL.revokeObjectURL(verifyCSVURL);
-    verifyAudioURL = verifyCSVURL = null;
-    verifyFile = null;
+    verifyCSVURL = URL.createObjectURL(new Blob([csv],
+      { type: "text/csv;charset=utf-8" }));
+    const a = document.createElement("a");
+    a.href = verifyCSVURL;
+    a.download = session.sessionId + "_levels.csv";
+    a.textContent = "音・体動CSVを保存（" + rows.length + "観測）";
+    a.style.cssText = "display:block;padding:16px 0;color:#9bd5ff";
+    verifyPanel.querySelector("[data-csv]").replaceChildren(a);
+    verifyMessage("CSVを用意しました。空欄は欠測または未判定です。" +
+      " 音声解析窓は別々で、倍率の厳密比較ではありません。");
+  } catch (error) { verifyMessage(errorText(error)); }
+  finally { verifyBusy = false; updateControls(); }
+}
+  `;
+
+  function once(text, from, to, label) {
+    const p = text.indexOf(from);
+    if (p < 0 || text.indexOf(from, p + from.length) >= 0) {
+      throw new Error(label + "の位置が一意に一致しません。");
+    }
+    return text.slice(0, p) + to + text.slice(p + from.length);
+  }
+  function between(text, from, until, replacement, label) {
+    const p = text.indexOf(from);
+    const q = text.indexOf(until, p + from.length);
+    if (p < 0 || q < 0 || text.indexOf(from, p + from.length) >= 0) {
+      throw new Error(label + "の関数範囲が一致しません。");
+    }
+    return text.slice(0, p) + replacement + "\n\n" + text.slice(q);
   }
 
-  function verifyMessage(text) {
-    verifyPanel.querySelector("[data-status]").textContent = text;
-  }
+  $("source").onchange = () => {
+    $("build").disabled = !$("source").files.length;
+    $("report").textContent = "選択済み。v07を生成してください。";
+  };
 
-  function verifyBlocked() {
-    return Boolean(verifyBusy || recording || starting || stopping || updating || disposed);
-  }
-
-  function sessionItems(name, sessionId) {
-    return transaction([name], "readonly", (tx, result) => {
-      const request = tx.objectStore(name).index("sessionId")
-        .getAll(IDBKeyRange.only(sessionId));
-      request.onsuccess = () => result(request.result);
-    });
-  }
-
-  function resetVerifySelection(session) {
-    if (!verifyPanel) return;
-    const nextId = session ? session.sessionId : null;
-    if (nextId === verifySelectedId) return;
-    clearVerifyFiles();
-    verifySelectedId = nextId;
-    verifyPanel.querySelector("[data-files]").replaceChildren();
-    verifyPanel.querySelector("[data-csv]").replaceChildren();
-    verifyPanel.querySelector("[data-share]").disabled = true;
-    verifyPanel.querySelector("[data-decode]").disabled = true;
-    verifyMessage(session ? "対象：" + session.sessionId : "対象記録なし");
-  }
-
-  async function loadSavedAudio() {
-    if (verifyBlocked() || !currentSession) return;
-    const session = currentSession;
-    verifyBusy = true;
-    updateControls();
+  $("build").onclick = async () => {
+    $("build").disabled = true;
+    $("download").replaceChildren();
+    if (url) URL.revokeObjectURL(url);
+    url = null;
+    let stage = "読込";
     try {
-      clearVerifyFiles();
-      verifyPanel.querySelector("[data-files]").replaceChildren();
-      verifyPanel.querySelector("[data-csv]").replaceChildren();
-      verifyPanel.querySelector("[data-share]").disabled = true;
-      verifyPanel.querySelector("[data-decode]").disabled = true;
-      verifyMessage("保存音声を読み込んでいます…");
-      if (!Number.isFinite(session.audioBytes) || session.audioBytes <= 0) {
-        throw new Error("保存音声がありません。");
+      const original = await $("source").files[0].text();
+      const starts = [...original.matchAll(/<script\b[^>]*>/gi)];
+      const doc = new DOMParser().parseFromString(original, "text/html");
+      if (starts.length !== 1 || doc.querySelectorAll("script").length !== 1 ||
+          doc.querySelector("script").hasAttribute("src")) {
+        throw new Error("単一インラインscriptのv06本体を選択してください。");
       }
-      if (session.audioBytes > VERIFY_EXPORT_LIMIT) {
-        throw new Error("音声読込上限128 MiBを超えています。短時間記録で確認してください。");
+      const start = starts[0].index + starts[0][0].length;
+      const end = original.toLowerCase().indexOf("<" + "/script>", start);
+      if (end < 0) throw new Error("script終了タグがありません。");
+      let code = original.slice(start, end).replace(/\r\n?/g, "\n");
+      if (code !== doc.querySelector("script").textContent) {
+        throw new Error("script抽出検査に失敗しました。");
       }
-      const chunks = await sessionItems("audioChunks", session.sessionId);
-      chunks.sort((a, b) => a.sequence - b.sequence);
-      if (!chunks.length || chunks.length !== session.audioChunkCount) {
-        throw new Error("音声チャンク数が保存記録と一致しません。");
+      stage = "v06確認";
+      if (!code.includes("SOMNOLOG_AUDIO_VERIFY_V06") ||
+          code.includes("function aggregateObservedLevels(")) {
+        throw new Error("今回のv06本体ではないか、修正済みです。");
       }
-      let bytes = 0;
-      chunks.forEach((chunk, i) => {
-        if (chunk.sequence !== i + 1 || !(chunk.data instanceof ArrayBuffer)) {
-          throw new Error("音声チャンクの順序または形式が不正です。");
-        }
-        bytes += chunk.data.byteLength;
-      });
-      if (bytes !== session.audioBytes || bytes > VERIFY_EXPORT_LIMIT) {
-        throw new Error("音声サイズが一致しないか、上限を超えています。");
+      new Function(code);
+      stage = "修正";
+      code = once(code, 'const APP_VERSION = "v20261009-06";',
+        'const APP_VERSION = "v20261009-07";', "バージョン");
+      code = between(code, "  function startLevelLogging() {",
+        "  function clearVerifyFiles() {", logging, "短時間観測");
+      code = between(code, "  async function makeLevelsCSV() {",
+        "  async function decodeSavedAudio() {", aggregation, "集計・CSV");
+      code = once(code, 'kind: "audio_levels_v06",',
+        'kind: "audio_levels_v07",', "ログ識別");
+      code = once(code,
+        'if (!recording || stopping) return;\nstopping = true;',
+        'if (!recording || stopping) return;\nstopLevelLogging();\nstopping = true;',
+        "停止直前観測");
+      code = once(code,
+        'stopLevelLogging();\nawait saveChain;\nsession.state =',
+        'stopLevelLogging();\nawait saveChain;\n' +
+        'await finalizeObservedMetrics(session, stopOffset);\n' +
+        'if (!session.audioChunkCount || !session.audioBytes) {\n' +
+        'recordingFault = recordingFault || "最終音声データが0バイトです。音声保存は成功していません。";\n' +
+        '}\nsession.state =',
+        "停止後集計・0バイト確認");
+      code = once(code,
+        '+ `音・体動集計はPhase 3未実装。`',
+        '+ v07CoverageText(session)', "終了表示");
+      code = once(code,
+        'phase.textContent = "Phase 3未実装";',
+        'phase.textContent = "観測ログ集計";', "履歴見出し");
+      code = once(code,
+        '"実測波形・音／体動の検出時間は未取得。サンプル値は表示しません。";',
+        'v07CoverageText(session) + " 時系列グラフは未実装です。";',
+        "履歴取得状態");
+      code = once(code,
+        'detail: "Phase 2。センシングログは未取得。"',
+        'detail: "v07。音・端末体動の観測ログと概算検出時間を保存。"',
+        "開始ログ説明");
+      code = once(code, 'previewMessage("記録開始 — Phase 2",',
+        'previewMessage("記録開始 — v07",', "開始表示");
+      code = once(code,
+        '"実測メーターは動作します。音・体動の検出時間集計は未実装です。"',
+        '"音・端末体動を約100ms周期で観測し、停止時に検出時間を概算します。音基準は開始後2秒の有効観測から求めます。"',
+        "集計説明");
+      code = code.replaceAll("100ms集計は未実装です。",
+        "v07では録音中の観測ログと概算検出時間を保存します。");
+      code = code.replaceAll(
+        "実測メーターを利用できます。検出時間・保存波形はPhase 3、ZIPはPhase 4です。",
+        "実測メーターと観測ログの概算検出時間を利用できます。時系列グラフとZIPは未実装です。");
+      code = code.replaceAll(
+        "※端末内に保存した実記録を表示します。波形はPhase 3未実装。",
+        "※端末内の実記録を表示します。検出時間は観測区間の概算。グラフは未実装。");
+      stage = "出力検査";
+      new Function(code);
+      const result = original.slice(0, start) + code + original.slice(end);
+      const check = new DOMParser().parseFromString(result, "text/html");
+      if (check.querySelectorAll("script").length !== 1 ||
+          check.querySelector("script").textContent !== code) {
+        throw new Error("生成後scriptの構造が一致しません。");
       }
-      const type = session.audioConfig.mimeType || chunks[0].mimeType;
-      const extension = type.includes("mp4") ? "m4a" : "webm";
-      verifyFile = new File(chunks.map(c => c.data),
-        session.sessionId + "." + extension, { type });
-      verifyAudioURL = URL.createObjectURL(verifyFile);
-      const audio = document.createElement("audio");
-      audio.controls = true;
-      audio.preload = "metadata";
-      audio.style.width = "100%";
-      audio.src = verifyAudioURL;
-      audio.addEventListener("error", () => verifyMessage(
-        "音声の再生に失敗しました。中断音声はコンテナが未完結の可能性があります。"));
-      audio.addEventListener("loadedmetadata", () => verifyMessage(
-        "音声メタデータ読込成功。再生ボタンで確認してください。増幅倍率の保証ではありません。"));
+      url = URL.createObjectURL(new Blob([result],
+        { type: "text/html;charset=utf-8" }));
       const link = document.createElement("a");
-      link.href = verifyAudioURL;
-      link.download = verifyFile.name;
-      link.textContent = "音声ファイルを保存";
-      link.style.cssText = "display:block;padding:16px 0;color:#9bd5ff";
-      verifyPanel.querySelector("[data-files]").append(audio, link);
-      let canShare = false;
-      try {
-        canShare = Boolean(navigator.share && navigator.canShare &&
-          navigator.canShare({ files: [verifyFile] }));
-      } catch (_) {}
-      verifyPanel.querySelector("[data-share]").disabled = !canShare;
-      verifyPanel.querySelector("[data-decode]").disabled =
-        verifyFile.size > VERIFY_DECODE_LIMIT;
-      verifyMessage("音声を用意しました。" +
-        (session.audioFinalized ? "" : " 中断記録の再生は未保証です。") +
-        (verifyFile.size > VERIFY_DECODE_LIMIT ? " 振幅解析は16 MiB以下のみ対応。" : ""));
-    } catch (error) {
-      clearVerifyFiles();
-      verifyMessage(errorText(error));
+      link.href = url;
+      link.download = "SomnoLog_v20261009-07.html";
+      link.textContent = "SomnoLog_v20261009-07.htmlを保存";
+      $("download").append(link);
+      $("report").textContent =
+        "生成成功：v20261009-07\n" +
+        "・音／体動の検出時間・取得時間・欠測時間を保存\n" +
+        "・開始時と停止直前にも観測\n" +
+        "・約1秒分ごとと停止時にログ保存\n" +
+        "・音声0バイトをエラーとして表示\n" +
+        "・既存DB・ゲイン・録音経路・更新機能を維持\n\n" +
+        "構文とscript構造を検査しました。実機動作は未検証です。\n" +
+        "公開先のindex.htmlを置き換え、起動表示07を確認してください。\n" +
+        "旧記録の集計は自動更新しません。新しい短時間録音で確認してください。";
+    } catch (e) {
+      $("report").textContent = "生成中止：" + stage + "\n" +
+        e.name + "：" + e.message + "\n元HTMLは変更していません。";
     } finally {
-      verifyBusy = false;
-      updateControls();
+      $("build").disabled = !$("source").files.length;
     }
-  }
-
-  async function makeLevelsCSV() {
-    if (verifyBlocked() || !currentSession) return;
-    const session = currentSession;
-    verifyBusy = true;
-    updateControls();
-    try {
-      const batches = await sessionItems("profileBins", session.sessionId);
-      const rows = batches.filter(b => b.kind === "audio_levels_v06")
-        .flatMap(b => b.rows).sort((a, b) => a.offsetMs - b.offsetMs);
-      if (!rows.length) {
-        throw new Error("計測ログがありません。v06で新しく録音してください。");
-      }
-      const keys = ["timestamp", "offsetMs", "gapMs", "gainLinear", "status",
-        "inputRms", "inputPeak", "inputDbFS", "outputRms", "outputPeak",
-        "outputDbFS", "outputOverFullScaleFraction", "motionG"];
-      const csv = "\ufeff" + keys.join(",") + "\r\n" +
-        rows.map(row => keys.map(key => row[key] ?? "").join(",")).join("\r\n");
-      if (verifyCSVURL) URL.revokeObjectURL(verifyCSVURL);
-      verifyCSVURL = URL.createObjectURL(new Blob([csv],
-        { type: "text/csv;charset=utf-8" }));
-      const link = document.createElement("a");
-      link.href = verifyCSVURL;
-      link.download = session.sessionId + "_levels.csv";
-      link.textContent = "計測ログCSVを保存（" + rows.length + "観測）";
-      link.style.cssText = "display:block;padding:16px 0;color:#9bd5ff";
-      const container = verifyPanel.querySelector("[data-csv]");
-      container.replaceChildren(link);
-      verifyMessage("CSVを用意しました。100ms周期の観測ログです。" +
-        "解析窓は別々で、連続区間集計や厳密な倍率測定ではありません。");
-    } catch (error) { verifyMessage(errorText(error)); }
-    finally { verifyBusy = false; updateControls(); }
-  }
-
-  async function decodeSavedAudio() {
-    if (verifyBlocked() || !verifyFile || verifyFile.size > VERIFY_DECODE_LIMIT) return;
-    const file = verifyFile;
-    verifyBusy = true;
-    updateControls();
-    try {
-      const Constructor = window.AudioContext || window.webkitAudioContext;
-      verifyDecodeContext = new Constructor();
-      verifyMessage("保存音声をデコードして解析中…");
-      const buffer = await verifyDecodeContext.decodeAudioData(await file.arrayBuffer());
-      let sum = 0, peak = 0, nearFullScale = 0;
-      const count = buffer.length * buffer.numberOfChannels;
-      if (!count) throw new Error("デコードした音声が空です。");
-      for (let c = 0; c < buffer.numberOfChannels; c++) {
-        for (const x of buffer.getChannelData(c)) {
-          sum += x * x;
-          peak = Math.max(peak, Math.abs(x));
-          if (Math.abs(x) >= 0.999) nearFullScale++;
-        }
-      }
-      const rms = Math.sqrt(sum / count);
-      verifyMessage("保存音声の解析成功：長さ " + buffer.duration.toFixed(2) +
-        "秒／" + buffer.numberOfChannels + "ch／RMS " + rms.toFixed(6) +
-        "／" + (rms > 0 ? (20 * Math.log10(rms)).toFixed(2) : "-∞") +
-        " dBFS／ピーク " + peak.toFixed(6) +
-        "／フルスケール近傍 " + (100 * nearFullScale / count).toFixed(3) +
-        "%。これはデコード後の実測振幅です。元入力との倍率は未確定。" +
-        "ピーク値だけで音割れは断定できません。");
-    } catch (error) {
-      verifyMessage("保存音声の解析失敗：" + errorText(error));
-    } finally {
-      if (verifyDecodeContext) {
-        try { await verifyDecodeContext.close(); } catch (_) {}
-        verifyDecodeContext = null;
-      }
-      verifyBusy = false;
-      updateControls();
-    }
-  }
-
-  function installAudioVerifyUI() {
-    verifyPanel = document.createElement("section");
-    verifyPanel.id = "somnolog-audio-verify";
-    verifyPanel.className = "panel";
-    const heading = document.createElement("h3");
-    heading.textContent = "保存音声・録音レベルの確認";
-    const note = document.createElement("p");
-    note.className = "note";
-    note.textContent = "音声読込128 MiBまで／振幅解析16 MiBまで。" +
-      "解析時はデコード後のメモリを使用します。" +
-      "旧記録の音声も取り出せますが、旧記録の計測ログはありません。";
-    const actions = document.createElement("div");
-    actions.className = "actions";
-    function button(text, handler, attribute) {
-      const node = document.createElement("button");
-      node.type = "button";
-      node.className = "action secondary";
-      node.textContent = text;
-      if (attribute) node.setAttribute(attribute, "");
-      node.addEventListener("click", handler);
-      actions.append(node);
-      return node;
-    }
-    button("保存音声を読み込む", () => void loadSavedAudio());
-    button("計測ログCSVを用意", () => void makeLevelsCSV());
-    const share = button("読み込んだ音声を共有", async () => {
-      if (verifyBlocked() || !verifyFile || !navigator.share) return;
-      try {
-        await navigator.share({ files: [verifyFile], title: "SomnoLog録音" });
-      } catch (error) {
-        if (error.name !== "AbortError") verifyMessage(errorText(error));
-      }
-    }, "data-share");
-    share.disabled = true;
-    const decode = button("保存音声のRMS・ピークを解析",
-      () => void decodeSavedAudio(), "data-decode");
-    decode.disabled = true;
-    const files = document.createElement("div");
-    files.setAttribute("data-files", "");
-    const csv = document.createElement("div");
-    csv.setAttribute("data-csv", "");
-    const status = document.createElement("p");
-    status.className = "note";
-    status.setAttribute("data-status", "");
-    status.setAttribute("role", "status");
-    verifyPanel.append(heading, note, actions, files, csv, status);
-    el("record-screen").insertBefore(verifyPanel,
-      el("record-screen").querySelector(".bottom"));
-
-    const originalSummary = renderSummary;
-    renderSummary = function(session) {
-      originalSummary(session);
-      resetVerifySelection(session);
-    };
-    const originalRecords = renderRecords;
-    renderRecords = function() {
-      originalRecords();
-      el("record-list").querySelectorAll("[data-record-id]").forEach(card => {
-        const node = document.createElement("button");
-        node.type = "button";
-        node.className = "action secondary";
-        node.textContent = "この記録の音声を確認";
-        node.addEventListener("click", () => {
-          if (verifyBlocked()) return;
-          const session = records.find(s => s.sessionId === card.dataset.recordId);
-          if (!session) return;
-          renderSummary(session);
-          showScreen("record-screen");
-          void loadSavedAudio();
-        });
-        card.append(node);
-      });
-    };
-    const notice = document.createElement("p");
-    notice.className = "note";
-    const policy = recordingGainPolicy();
-    notice.textContent = "録音ゲイン設定：" + policy.gainLinear +
-      "倍（" + policy.deviceClass + "）。メーターは増幅前。保存音声の倍率は未検証。";
-    el("capture-heading").parentElement.append(notice);
-    window.addEventListener("pagehide", clearVerifyFiles);
-  }
-  installAudioVerifyUI();
-  
-startMeterTimer();
-
-// SOMNOLOG_VISIBLE_UPDATE_UI_01
-function installVisibleUpdateUI() {
-if (document.getElementById("somnolog-update-panel")) {
-throw new Error("更新UIが重複しています。");
-}
-const header = el("capture-heading").parentElement;
-const panel = document.createElement("div");
-panel.id = "somnolog-update-panel";
-panel.style.cssText = "margin-top:12px;display:grid;gap:10px";
-
-const version = document.createElement("p");
-version.id = "somnolog-version";
-version.textContent = "バージョン：" + APP_VERSION;
-version.style.cssText =
-"margin:0;color:#bfdbd1;font-size:13px;overflow-wrap:anywhere";
-
-const status = document.createElement("p");
-status.id = "somnolog-update-status";
-status.setAttribute("role", "status");
-status.style.cssText =
-"margin:0;color:#aebbc9;font-size:12px;line-height:1.7";
-
-const updateButton = document.createElement("button");
-updateButton.id = "somnolog-update-button";
-updateButton.type = "button";
-updateButton.className = "control history";
-updateButton.textContent = "更新を確認・適用";
-
-const reloadButton = document.createElement("button");
-reloadButton.id = "somnolog-reload-button";
-reloadButton.type = "button";
-reloadButton.className = "control history";
-reloadButton.textContent = "ページを再読み込み";
-
-panel.append(version,updateButton,reloadButton,status);
-header.append(panel);
-el("capture-heading").title = "SomnoLog " + APP_VERSION;
-
-function blocked() {
-return Boolean(recording || starting || stopping ||
-pendingChunks || updating || verifyBusy || disposed);
-}
-
-function refresh() {
-updateButton.disabled = blocked();
-reloadButton.disabled = blocked();
-status.textContent = recording || starting || stopping || pendingChunks
-? "録音・保存中は更新できません。"
-: updating ? "更新処理中です。確認画面に従ってください。"
-: "起動中：" + APP_VERSION + "。更新結果は確認画面に表示します。";
-}
-
-updateButton.addEventListener("click", async () => {
-if (blocked()) return;
-try {
-const task = applyLatestGitHub();
-refresh();
-await task;
-} catch (error) {
-if (!disposed) showMessage("更新確認に失敗",errorText(error));
-} finally {
-if (!disposed) refresh();
-}
-});
-
-reloadButton.addEventListener("click", async () => {
-if (blocked()) return;
-if (!window.confirm(
-"公開ページをキャッシュ回避用URLで再読み込みしますか？\n" +
-"保存済み記録は削除しません。未保存の画面状態は失われます。"
-)) return;
-try {
-const task = reloadWithoutCache();
-refresh();
-await task;
-} catch (error) {
-if (!disposed) showMessage("再読み込みに失敗",errorText(error));
-} finally {
-if (!disposed) refresh();
-}
-});
-
-let timer = null;
-function stopUI() {
-clearInterval(timer);
-timer = null;
-}
-function startUI() {
-if (disposed || timer !== null) return;
-refresh();
-timer = setInterval(() => {
-if (disposed) { stopUI(); return; }
-refresh();
-},300);
-}
-window.addEventListener("pagehide",stopUI);
-window.addEventListener("pageshow",startUI);
-startUI();
-}
-installVisibleUpdateUI();
-
-void initialize();
+  };
 })();
-
-
 </script>
-  </body>
-  </html>
+</body>
+</html>
